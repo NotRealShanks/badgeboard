@@ -3,6 +3,7 @@ package cache
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -65,9 +66,14 @@ func TestCache_Standard200_ExpiresAfter6Hours(t *testing.T) {
 	}
 
 	entry := &Entry{
-		Sample Learner,
-		Sample Learner,
-		HTML:   []byte("Sample Learner"),
+		UUID:        "200-uuid",
+		Status:      model.StatusComplete,
+		DisplayName: "Sample Learner",
+		League:      "Silver League",
+		Points:      150,
+		Badges: []model.BadgeRecord{
+			{ID: "b1", Title: "Cloud Basics"},
+		},
 	}
 
 	if err := c.Set("200-uuid", entry); err != nil {
@@ -79,8 +85,8 @@ func TestCache_Standard200_ExpiresAfter6Hours(t *testing.T) {
 	if err != nil || !hit || cached == nil {
 		t.Fatalf("expected immediate cache hit, got hit=%v, err=%v", hit, err)
 	}
-	if string(cached.HTML) != "Sample Learner" {
-		Sample Learner, string(cached.HTML))
+	if cached.DisplayName != "Sample Learner" || len(cached.Badges) != 1 {
+		t.Errorf("unexpected cached entry: %+v", cached)
 	}
 
 	// 2. Advance clock 5 hours 59 minutes -> still valid hit
@@ -167,10 +173,10 @@ func TestCache_PrivateOrNotFound_ShortNegativeTTL(t *testing.T) {
 	})
 
 	_ = c.Set(validUUID, &Entry{
-		Sample Learner,
-		HTML:      []byte("Sample Learner"),
-		Sample Learner,
-		Sample Learner,
+		UUID:        validUUID,
+		Status:      model.StatusComplete,
+		DisplayName: "Sample Learner",
+		FetchedAt:   currentVirtualTime,
 	})
 
 	// 10 minutes later: both should still be hit
@@ -223,18 +229,18 @@ func TestCache_AtomicWriteOverwritesExisting(t *testing.T) {
 
 	uuid := "atomic-user"
 	first := &Entry{
-		UUID:   uuid,
-		HTML:   []byte("first version"),
-		Status: model.StatusInProgress,
+		UUID:        uuid,
+		DisplayName: "Version 1",
+		Status:      model.StatusInProgress,
 	}
 	if err := c.Set(uuid, first); err != nil {
 		t.Fatalf("first Set failed: %v", err)
 	}
 
 	second := &Entry{
-		UUID:   uuid,
-		HTML:   []byte("Sample Learner"),
-		Sample Learner,
+		UUID:        uuid,
+		DisplayName: "Version 2",
+		Status:      model.StatusComplete,
 	}
 	if err := c.Set(uuid, second); err != nil {
 		t.Fatalf("second Set failed: %v", err)
@@ -244,7 +250,82 @@ func TestCache_AtomicWriteOverwritesExisting(t *testing.T) {
 	if err != nil || !hit {
 		t.Fatalf("Get after overwrite failed: hit=%v, err=%v", hit, err)
 	}
-	if string(entry.HTML) != "Sample Learner" {
-		t.Errorf("Sample Learner", string(entry.HTML))
+	if entry.DisplayName != "Version 2" {
+		t.Errorf("expected 'Version 2', got %q", entry.DisplayName)
+	}
+}
+
+func TestCache_ParsedDataStored_NoRawHTML(t *testing.T) {
+	tmpDir := t.TempDir()
+	c, err := New(tmpDir, 6*time.Hour)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	uuid := "parsed-check"
+	entry := &Entry{
+		UUID:        uuid,
+		Status:      model.StatusComplete,
+		DisplayName: "Sample Learner",
+		League:      "Gold League",
+		Points:      300,
+		Badges: []model.BadgeRecord{
+			{
+				ID:        "badge-1",
+				Title:     "Generative AI Explorer",
+				RawEarned: "Nov 3, 2026 EST",
+				URL:       "https://www.skills.google/public_profiles/parsed-check/badges/badge-1",
+			},
+		},
+	}
+
+	if err := c.Set(uuid, entry); err != nil {
+		t.Fatalf("Set failed: %v", err)
+	}
+
+	// Read raw file content from disk to verify NO raw HTML key is present
+	filePath := filepath.Join(tmpDir, uuid+".json")
+	rawBytes, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("reading cache file from disk: %v", err)
+	}
+
+	rawStr := string(rawBytes)
+	if strings.Contains(rawStr, `"html"`) {
+		t.Errorf("cache file must not contain raw HTML: %s", rawStr)
+	}
+	if !strings.Contains(rawStr, "Generative AI Explorer") {
+		t.Errorf("cache file must contain parsed badge title: %s", rawStr)
+	}
+}
+
+func TestCache_Clear(t *testing.T) {
+	tmpDir := t.TempDir()
+	c, err := New(tmpDir, 6*time.Hour)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	for i := 0; i < 3; i++ {
+		uuid := filepath.Join(tmpDir, "dummy")
+		_ = c.Set(string(rune('a'+i)), &Entry{
+			UUID:   string(rune('a' + i)),
+			Sample Learner,
+		})
+		_ = uuid
+	}
+
+	entries, err := os.ReadDir(tmpDir)
+	if err != nil || len(entries) != 3 {
+		t.Fatalf("expected 3 cache files before clear, got %d (err: %v)", len(entries), err)
+	}
+
+	if err := c.Clear(); err != nil {
+		t.Fatalf("Clear failed: %v", err)
+	}
+
+	entriesAfter, err := os.ReadDir(tmpDir)
+	if err != nil || len(entriesAfter) != 0 {
+		t.Fatalf("expected 0 cache files after clear, got %d (err: %v)", len(entriesAfter), err)
 	}
 }

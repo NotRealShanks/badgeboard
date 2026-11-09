@@ -110,9 +110,9 @@ func TestLoad_SampleRosterFileWithBOM(t *testing.T) {
 		t.Errorf("unexpected bad row reason: %s", roster.BadRows[0].Reason)
 	}
 
-	// 4. Verify optional column handling: Alice Johnson has name, email, team
+	// 4. Verify optional column handling: Alice Johnson has name, team
 	alice := roster.Students[0]
-	if alice.Name != "Alice Johnson" || alice.Email != "alice@example.com" || alice.Team != "Team Alpha" {
+	if alice.Name != "Alice Johnson" || alice.Team != "Team Alpha" {
 		t.Errorf("Alice data mismatch: %+v", alice)
 	}
 
@@ -121,8 +121,8 @@ func TestLoad_SampleRosterFileWithBOM(t *testing.T) {
 	if noNameStudent.Name != "" {
 		t.Errorf("expected empty name for student without name, got: %q", noNameStudent.Name)
 	}
-	if noNameStudent.Email != "no-name@example.com" {
-		t.Errorf("expected email preserved, got: %s", noNameStudent.Email)
+	if noNameStudent.UUID != "55555555-6666-7777-8888-999999999999" {
+		t.Errorf("expected UUID preserved, got: %s", noNameStudent.UUID)
 	}
 }
 

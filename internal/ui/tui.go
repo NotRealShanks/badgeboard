@@ -138,9 +138,10 @@ func (m *LiveModel) View() string {
 	var b strings.Builder
 
 	elapsed := time.Since(m.startTime)
-	rate := 0.0
-	if elapsed.Seconds() > 0 && m.current > 0 {
-		rate = float64(m.current) / elapsed.Seconds()
+	netReqs := m.current - m.cacheHits
+	netRate := 0.0
+	if elapsed.Seconds() > 0 && netReqs > 0 {
+		netRate = float64(netReqs) / elapsed.Seconds()
 	}
 
 	percent := 0.0
@@ -179,42 +180,37 @@ func (m *LiveModel) View() string {
 	if remaining < 0 {
 		remaining = 0
 	}
-	effectiveRPS := rate
-	if effectiveRPS <= 0 && m.rps > 0 {
-		effectiveRPS = m.rps
-	}
 	etaStr := "calculating..."
-	if effectiveRPS > 0 {
-		etaSec := float64(remaining) / effectiveRPS
-		etaDur := time.Duration(etaSec) * time.Second
-		etaStr = etaDur.Round(time.Second).String()
+	if remaining == 0 {
+		etaStr = "0s"
+	} else {
+		effectiveNetRPS := netRate
+		if effectiveNetRPS <= 0 && m.rps > 0 {
+			effectiveNetRPS = m.rps
+		}
+		if effectiveNetRPS > 0 {
+			etaSec := float64(remaining) / effectiveNetRPS
+			etaDur := time.Duration(etaSec) * time.Second
+			etaStr = etaDur.Round(time.Second).String()
+		}
 	}
 
-	statsStr := fmt.Sprintf("Rate: %.1f req/s  |  ETA: %s  |  Cache Hits: %d  |  Elapsed: %s",
-		rate, etaStr, m.cacheHits, elapsed.Round(time.Second).String())
+	statsStr := fmt.Sprintf("Cached: %d  |  Net: %.1f req/s  |  ETA: %s  |  Elapsed: %s",
+		m.cacheHits, netRate, etaStr, elapsed.Round(time.Second).String())
 	if !m.noColor {
 		statsStr = mutedStyle.Render(statsStr)
 	}
 	b.WriteString(statsStr + "\n\n")
 
-	// Recent activity list
+	// Recent activity list using short UUID labels only (protects PII in live ticker)
 	b.WriteString(headerStyle.Render("Recent Profile Activity:") + "\n")
 	if len(m.recent) == 0 {
 		b.WriteString(mutedStyle.Render("  Waiting for worker responses...") + "\n")
 	} else {
 		for _, r := range m.recent {
-			name := r.Student.Name
-			if name == "" {
-				name = r.DisplayName
-			}
-			if name == "" {
-				name = r.Student.ProfileURL
-			}
-			if len(name) > 24 {
-				name = name[:23] + "…"
-			}
+			label := model.FallbackProfileLabel(r.Student.UUID)
 			status := StatusLabel(r.Status, m.noColor)
-			line := fmt.Sprintf("  %-24s  %2d badges  %s", name, r.CountedBadges, status)
+			line := fmt.Sprintf("  %-20s  %2d badges  %s", label, r.CountedBadges, status)
 			b.WriteString(line + "\n")
 		}
 	}

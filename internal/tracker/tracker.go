@@ -53,6 +53,13 @@ func WithRefresh(refresh bool) Option {
 	}
 }
 
+// WithNoCache explicitly disables disk caching (read-nothing and write-nothing mode).
+func WithNoCache() Option {
+	return func(t *Tracker) {
+		t.cache = nil
+	}
+}
+
 // New creates an orchestrated Tracker configured from cfg.
 func New(cfg *config.Config, opts ...Option) (*Tracker, error) {
 	if cfg == nil {
@@ -183,13 +190,18 @@ func (t *Tracker) processStudent(ctx context.Context, student model.Student) mod
 				return res
 			}
 
-			if len(cached.HTML) > 0 {
-				data, parseErr := parse.Parse(cached.HTML)
-				res := parse.Evaluate(data, student, t.config.Goal, t.config.IsBadgeEligible, parseErr)
-				res.FromCache = true
-				res.FetchedAt = cached.FetchedAt
-				return res
+			// Re-evaluate parsed profile data against current goal, required badges, and window
+			data := parse.ProfileData{
+				DisplayName: cached.DisplayName,
+				League:      cached.League,
+				Points:      cached.Points,
+				Badges:      cached.Badges,
+				IsPrivate:   cached.Status == model.StatusPrivateOrNotFound,
 			}
+			res := parse.Evaluate(&data, student, t.config.Goal, t.config.IsBadgeEligible, nil)
+			res.FromCache = true
+			res.FetchedAt = cached.FetchedAt
+			return res
 		}
 	}
 
@@ -233,13 +245,16 @@ func (t *Tracker) processStudent(ctx context.Context, student model.Student) mod
 	data, parseErr := parse.Parse(html)
 	res := parse.Evaluate(data, student, t.config.Goal, t.config.IsBadgeEligible, parseErr)
 
-	// 4. Save to cache if evaluation produced a cacheable 200 status or PrivateOrNotFound
+	// 4. Save to cache if evaluation produced a cacheable 200 status (no raw HTML stored)
 	if t.cache != nil && student.UUID != "" && parseErr == nil {
 		_ = t.cache.Set(student.UUID, &cache.Entry{
-			UUID:      student.UUID,
-			HTML:      html,
-			Status:    res.Status,
-			FetchedAt: res.FetchedAt,
+			UUID:        student.UUID,
+			Status:      res.Status,
+			DisplayName: res.DisplayName,
+			League:      res.League,
+			Points:      res.Points,
+			Badges:      res.Badges,
+			FetchedAt:   res.FetchedAt,
 		})
 	}
 

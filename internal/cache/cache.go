@@ -17,12 +17,15 @@ const (
 	DefaultNegativeTTL = 15 * time.Minute
 )
 
-// Entry represents a cached profile response.
+// Entry represents a cached profile response containing parsed metadata and badges (no raw HTML).
 type Entry struct {
-	UUID      string       `json:"uuid"`
-	HTML      []byte       `json:"html,omitempty"`
-	Status    model.Status `json:"status"`
-	FetchedAt time.Time    `json:"fetched_at"`
+	UUID        string              `json:"uuid"`
+	Status      model.Status        `json:"status"`
+	DisplayName string              `json:"display_name,omitempty"`
+	League      string              `json:"league,omitempty"`
+	Points      int                 `json:"points,omitempty"`
+	Badges      []model.BadgeRecord `json:"badges,omitempty"`
+	FetchedAt   time.Time           `json:"fetched_at"`
 }
 
 // IsExpired returns true if the entry was fetched more than ttl ago.
@@ -175,5 +178,28 @@ func (c *Cache) Set(uuid string, entry *Entry) error {
 		}
 	}
 
+	return nil
+}
+
+// Dir returns the cache directory path.
+func (c *Cache) Dir() string {
+	return c.dir
+}
+
+// Clear removes all cached profile files from the cache directory.
+func (c *Cache) Clear() error {
+	entries, err := os.ReadDir(c.dir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("reading cache dir %q: %w", c.dir, err)
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".json") {
+			_ = os.Remove(filepath.Join(c.dir, entry.Name()))
+		}
+	}
 	return nil
 }

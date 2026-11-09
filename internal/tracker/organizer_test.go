@@ -108,6 +108,7 @@ func TestTracker_OrganizerSampleEndToEnd(t *testing.T) {
 	}
 
 	cfg := config.DefaultConfig()
+	cfg.Cache.Dir = t.TempDir()
 	trk, err := New(cfg, WithFetcher(fetcher))
 	if err != nil {
 		t.Fatalf("tracker initialization failed: %v", err)

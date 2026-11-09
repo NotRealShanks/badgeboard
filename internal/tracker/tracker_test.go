@@ -296,6 +296,117 @@ func TestTracker_CacheHitAndRefreshBypass(t *testing.T) {
 	}
 }
 
+func TestTracker_CacheReEvaluation_GoalRequiredBadgesAndWindow(t *testing.T) {
+	tmpDir := t.TempDir()
+	c, err := cache.New(tmpDir, 6*time.Hour)
+	if err != nil {
+		t.Fatalf("cache.New failed: %v", err)
+	}
+
+	uuid := "cache-reeval-uuid"
+	t1 := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	t2 := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
+	t3 := time.Date(2026, 11, 10, 0, 0, 0, 0, time.UTC)
+
+	// Pre-populate disk cache with parsed profile data (no raw HTML)
+	cachedEntry := &cache.Entry{
+		UUID:        uuid,
+		Status:      model.StatusInProgress,
+		DisplayName: "Sample Learner",
+		League:      "Gold League",
+		Points:      200,
+		Badges: []model.BadgeRecord{
+			{ID: "b1", Title: "Cloud Basics", EarnedAt: t1, RawEarned: "Earned Nov 1, 2026 EST"},
+			{ID: "b2", Title: "Generative AI", EarnedAt: t2, RawEarned: "Earned Nov 5, 2026 EST"},
+			{ID: "b3", Title: "Security Best Practices", EarnedAt: t3, RawEarned: "Earned Nov 10, 2026 EST"},
+		},
+		FetchedAt: time.Now().UTC(),
+	}
+	if err := c.Set(uuid, cachedEntry); err != nil {
+		t.Fatalf("seeding cache failed: %v", err)
+	}
+
+	var networkReqs atomic.Int32
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			networkReqs.Add(1)
+			t.Errorf("network request made when cache hit expected: %s", req.URL.String())
+			return nil, fmt.Errorf("unexpected network request")
+		}),
+	}
+	f := fetch.New(fetch.WithHTTPClient(client))
+
+	student := model.Student{
+		UUID:       uuid,
+		ProfileURL: "https://www.skills.google/public_profiles/" + uuid,
+	}
+	rost := &roster.Roster{Students: []model.Student{student}}
+
+	// 1. Goal 3 -> StatusComplete (3/3)
+	cfgGoal3 := &config.Config{Goal: 3}
+	trkGoal3, _ := New(cfgGoal3, WithFetcher(f), WithCache(c))
+	resGoal3, err := trkGoal3.Track(context.Background(), rost, nil)
+	if err != nil || len(resGoal3) != 1 {
+		t.Fatalf("Goal 3 run failed: %v", err)
+	}
+	if !resGoal3[0].FromCache {
+		t.Errorf("expected FromCache=true")
+	}
+	if resGoal3[0].Status != model.StatusComplete || resGoal3[0].CountedBadges != 3 {
+		t.Errorf("expected StatusComplete with 3 badges, got: %s (%d)", resGoal3[0].Status, resGoal3[0].CountedBadges)
+	}
+
+	// 2. Goal 5 -> StatusInProgress (3/5) without network request
+	cfgGoal5 := &config.Config{Goal: 5}
+	trkGoal5, _ := New(cfgGoal5, WithFetcher(f), WithCache(c))
+	resGoal5, err := trkGoal5.Track(context.Background(), rost, nil)
+	if err != nil || len(resGoal5) != 1 {
+		t.Fatalf("Goal 5 run failed: %v", err)
+	}
+	if resGoal5[0].Status != model.StatusInProgress || resGoal5[0].CountedBadges != 3 {
+		t.Errorf("expected StatusInProgress with 3/5 badges, got: %s (%d)", resGoal5[0].Status, resGoal5[0].CountedBadges)
+	}
+
+	// 3. Required badges filter -> only "Cloud Basics" counts
+	cfgReq := &config.Config{
+		Goal:           1,
+		RequiredBadges: []string{"Cloud Basics"},
+	}
+	trkReq, _ := New(cfgReq, WithFetcher(f), WithCache(c))
+	resReq, err := trkReq.Track(context.Background(), rost, nil)
+	if err != nil || len(resReq) != 1 {
+		t.Fatalf("Required badges run failed: %v", err)
+	}
+	if resReq[0].CountedBadges != 1 || resReq[0].TotalBadges != 3 {
+		t.Errorf("expected CountedBadges=1, TotalBadges=3, got counted=%d, total=%d", resReq[0].CountedBadges, resReq[0].TotalBadges)
+	}
+	if resReq[0].Status != model.StatusComplete {
+		t.Errorf("expected StatusComplete for 1 required badge with goal 1, got %s", resReq[0].Status)
+	}
+
+	// 4. Campaign window filter: window since Nov 4, 2026 -> only 2 badges count (Nov 5 and Nov 10)
+	windowSince := time.Date(2026, 11, 4, 0, 0, 0, 0, time.UTC)
+	cfgWindow := &config.Config{
+		Goal: 3,
+		Window: &config.DateWindow{
+			Start: &windowSince,
+		},
+	}
+	trkWindow, _ := New(cfgWindow, WithFetcher(f), WithCache(c))
+	resWindow, err := trkWindow.Track(context.Background(), rost, nil)
+	if err != nil || len(resWindow) != 1 {
+		t.Fatalf("Campaign window run failed: %v", err)
+	}
+	if resWindow[0].CountedBadges != 2 || resWindow[0].TotalBadges != 3 {
+		t.Errorf("expected CountedBadges=2, TotalBadges=3 under date window, got counted=%d, total=%d", resWindow[0].CountedBadges, resWindow[0].TotalBadges)
+	}
+
+	// Verify ZERO network requests were made across all 4 evaluations
+	if networkReqs.Load() != 0 {
+		t.Errorf("expected 0 network requests during cache re-evaluation, got %d", networkReqs.Load())
+	}
+}
+
 func TestTracker_ContextCancellationGraceful(t *testing.T) {
 	client := &http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -360,7 +471,9 @@ func TestTracker_TrackSingle(t *testing.T) {
 	}
 
 	fastFetcher := fetch.New(fetch.WithHTTPClient(client))
-	trk, _ := New(nil, WithFetcher(fastFetcher))
+	cfg := config.DefaultConfig()
+	cfg.Cache.Dir = t.TempDir()
+	trk, _ := New(cfg, WithFetcher(fastFetcher))
 
 	student := model.Student{
 		Name:       "Check User",

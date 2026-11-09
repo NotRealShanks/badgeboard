@@ -48,6 +48,7 @@ var (
 	flagRPS        float64
 	flagConcurrency int
 	flagRefresh    bool
+	flagNoCache    bool
 	flagAnonymize  bool
 	flagVerbose    bool
 	flagNoColor    bool
@@ -91,21 +92,27 @@ func loadAppConfig() (*config.Config, error) {
 	return cfg, nil
 }
 
-func buildTracker(cfg *config.Config, refresh bool) (*tracker.Tracker, error) {
+func buildTracker(cfg *config.Config, refresh bool, noCache bool) (*tracker.Tracker, error) {
 	limiter := ratelimit.New(cfg.RateLimit.RPS, cfg.RateLimit.Concurrency)
 	fetcher := fetch.New(fetch.WithLimiter(limiter))
 
-	ttl := time.Duration(cfg.Cache.TTLHours) * time.Hour
-	c, err := cache.New(cfg.Cache.Dir, ttl)
-	if err != nil {
-		return nil, fmt.Errorf("initializing cache: %w", err)
+	opts := []tracker.Option{
+		tracker.WithFetcher(fetcher),
+		tracker.WithRefresh(refresh),
 	}
 
-	return tracker.New(cfg,
-		tracker.WithFetcher(fetcher),
-		tracker.WithCache(c),
-		tracker.WithRefresh(refresh),
-	)
+	if noCache {
+		opts = append(opts, tracker.WithNoCache())
+	} else {
+		ttl := time.Duration(cfg.Cache.TTLHours) * time.Hour
+		c, err := cache.New(cfg.Cache.Dir, ttl)
+		if err != nil {
+			return nil, fmt.Errorf("initializing cache: %w", err)
+		}
+		opts = append(opts, tracker.WithCache(c))
+	}
+
+	return tracker.New(cfg, opts...)
 }
 
 func determineExitCode(results []model.ProfileResult) int {
@@ -131,6 +138,7 @@ func newRootCmd() *cobra.Command {
 	rootCmd.PersistentFlags().Float64Var(&flagRPS, "rps", 0, "Max requests per second (default 1.0)")
 	rootCmd.PersistentFlags().IntVar(&flagConcurrency, "concurrency", 0, "Max concurrent workers (default 2)")
 	rootCmd.PersistentFlags().BoolVar(&flagRefresh, "refresh", false, "Bypass disk cache and re-fetch from upstream")
+	rootCmd.PersistentFlags().BoolVar(&flagNoCache, "no-cache", false, "Disable on-disk cache (neither read nor write cache)")
 	rootCmd.PersistentFlags().BoolVar(&flagAnonymize, "anonymize", false, "Pseudonymize participant names and mask PII for public output")
 	rootCmd.PersistentFlags().BoolVarP(&flagVerbose, "verbose", "v", false, "Print verbose diagnostic logs")
 	rootCmd.PersistentFlags().BoolVar(&flagNoColor, "no-color", false, "Disable colorized terminal output (respects NO_COLOR)")
@@ -139,6 +147,7 @@ func newRootCmd() *cobra.Command {
 	rootCmd.AddCommand(newCheckCmd())
 	rootCmd.AddCommand(newExportCmd())
 	rootCmd.AddCommand(newDemoCmd())
+	rootCmd.AddCommand(newCacheCmd())
 	rootCmd.AddCommand(newVersionCmd())
 
 	return rootCmd
@@ -171,7 +180,7 @@ func newRunCmd() *cobra.Command {
 				return nil
 			}
 
-			trk, err := buildTracker(cfg, flagRefresh)
+			trk, err := buildTracker(cfg, flagRefresh, flagNoCache)
 			if err != nil {
 				return fmt.Errorf("building tracker: %w", err)
 			}
@@ -212,16 +221,25 @@ func newRunCmd() *cobra.Command {
 					}
 					if flagRunFormat == "" && (current == 1 || current%10 == 0 || current == total) {
 						elapsed := time.Since(startTime)
-						rate := float64(current) / elapsed.Seconds()
-						remaining := total - current
-						effectiveRPS := rate
-						if effectiveRPS <= 0 {
-							effectiveRPS = cfg.RateLimit.RPS
+						netReqs := current - cacheHits
+						netRate := 0.0
+						if elapsed.Seconds() > 0 && netReqs > 0 {
+							netRate = float64(netReqs) / elapsed.Seconds()
 						}
-						etaDur := time.Duration(float64(remaining)/effectiveRPS) * time.Second
+						remaining := total - current
+						etaDur := time.Duration(0)
+						if remaining > 0 {
+							effectiveNetRPS := netRate
+							if effectiveNetRPS <= 0 {
+								effectiveNetRPS = cfg.RateLimit.RPS
+							}
+							if effectiveNetRPS > 0 {
+								etaDur = time.Duration(float64(remaining)/effectiveNetRPS) * time.Second
+							}
+						}
 						pct := float64(current) / float64(total) * 100.0
-						fmt.Fprintf(os.Stderr, "[%d/%d] %.1f%% | Rate: %.1f req/s | ETA: %s | Cache Hits: %d\n",
-							current, total, pct, rate, etaDur.Round(time.Second), cacheHits)
+						fmt.Fprintf(os.Stderr, "[%d/%d] %.1f%% | Cached: %d | Net Rate: %.1f req/s | ETA: %s\n",
+							current, total, pct, cacheHits, netRate, etaDur.Round(time.Second))
 					}
 				})
 				if trackErr != nil && len(results) == 0 {
@@ -366,7 +384,7 @@ func newExportCmd() *cobra.Command {
 				return err
 			}
 
-			trk, err := buildTracker(cfg, flagRefresh)
+			trk, err := buildTracker(cfg, flagRefresh, flagNoCache)
 			if err != nil {
 				return err
 			}
@@ -399,6 +417,36 @@ func newExportCmd() *cobra.Command {
 	exportCmd.Flags().StringVar(&flagExportFormat, "format", "json", "Output format (json or csv)")
 	exportCmd.Flags().StringVarP(&flagOut, "out", "o", "", "Destination file path (defaults to stdout)")
 	return exportCmd
+}
+
+func newCacheCmd() *cobra.Command {
+	cacheCmd := &cobra.Command{
+		Use:   "cache",
+		Short: "Manage the local profile cache",
+	}
+
+	clearCmd := &cobra.Command{
+		Use:   "clear",
+		Short: "Clear all cached profile entries from disk",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadAppConfig()
+			if err != nil {
+				return err
+			}
+			c, err := cache.New(cfg.Cache.Dir, time.Duration(cfg.Cache.TTLHours)*time.Hour)
+			if err != nil {
+				return fmt.Errorf("opening cache: %w", err)
+			}
+			if err := c.Clear(); err != nil {
+				return fmt.Errorf("clearing cache: %w", err)
+			}
+			fmt.Printf("Cleared cache directory: %s\n", c.Dir())
+			return nil
+		},
+	}
+
+	cacheCmd.AddCommand(clearCmd)
+	return cacheCmd
 }
 
 func newDemoCmd() *cobra.Command {

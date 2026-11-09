@@ -251,8 +251,8 @@ func TestAnonymize_RealSampleAudit(t *testing.T) {
 
 	fullUUID := "be556f7b-ab4b-4be7-82fb-9be45202ddd7"
 	fullURL := "https://www.skills.google/public_profiles/" + fullUUID
-	rosterName := "Sample Learnereloper"
-	email := "litmus.dev@example.com"
+	rosterName := "Sample Learner Roster"
+	email := "learner@example.com"
 	h1DisplayName := "Sample Learner"
 
 	totalBadges := len(parsed.Badges)

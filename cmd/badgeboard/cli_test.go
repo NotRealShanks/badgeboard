@@ -71,7 +71,7 @@ func TestCLI_Demo(t *testing.T) {
 }
 
 func TestCLI_ExitCodes(t *testing.T) {
-	// 1. Success exit code (all evaluated or private)
+	// 1. Success exit code (0) for complete, in progress, no badges, and private/not found
 	allEvaluated := []model.ProfileResult{
 		{Sample Learner},
 		{Status: model.StatusInProgress},
@@ -79,10 +79,10 @@ func TestCLI_ExitCodes(t *testing.T) {
 		{Status: model.StatusPrivateOrNotFound},
 	}
 	if code := determineExitCode(allEvaluated); code != ExitSuccess {
-		t.Errorf("expected ExitSuccess (0), got %d", code)
+		t.Errorf("expected ExitSuccess (0) for all evaluated statuses including private, got %d", code)
 	}
 
-	// 2. Partial / Unreachable exit code (contains NetworkError, RateLimited, or ParseError)
+	// 2. Partial / Unreachable exit code (3) for network error, rate limit, parse error
 	withNetworkError := []model.ProfileResult{
 		{Sample Learner},
 		{Status: model.StatusNetworkError},
@@ -103,6 +103,20 @@ func TestCLI_ExitCodes(t *testing.T) {
 	}
 	if code := determineExitCode(withParseErr); code != ExitPartial {
 		t.Errorf("expected ExitPartial (3) for parse error, got %d", code)
+	}
+
+	// 3. Exit 1 (Fatal error) test via missing file
+	cmdFatal := newRootCmd()
+	cmdFatal.SetArgs([]string{"run", "non_existent_roster_file.csv"})
+	if err := cmdFatal.Execute(); err == nil {
+		t.Errorf("expected fatal error for non-existent file, got nil")
+	}
+
+	// 4. Exit 2 (Usage error) test via invalid flags
+	cmdUsage := newRootCmd()
+	cmdUsage.SetArgs([]string{"run", "--unknown-flag-12345"})
+	if err := cmdUsage.Execute(); err == nil {
+		t.Errorf("expected usage error for unknown flag, got nil")
 	}
 }
 
@@ -125,7 +139,7 @@ Student Three,https://www.skills.google/public_profiles/33333333-3333-3333-3333-
 	// Cancel context immediately
 	cancel()
 
-	trk, err := buildTracker(cfg, true)
+	trk, err := buildTracker(cfg, true, false)
 	if err != nil {
 		t.Fatalf("tracker build failed: %v", err)
 	}
