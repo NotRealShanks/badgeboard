@@ -172,3 +172,28 @@ func TestLoad_MissingFile(t *testing.T) {
 		t.Errorf("expected error for non-existent file, got nil")
 	}
 }
+
+func TestLoad_DeduplicateDifferentCaseUUID(t *testing.T) {
+	csvData := `Name,Google Skills Profile URL
+Student One,https://www.skills.google/public_profiles/BE556F7B-AB4B-4BE7-82FB-9BE45202DDD7
+Student Two,https://www.skills.google/public_profiles/be556f7b-ab4b-4be7-82fb-9be45202ddd7
+`
+	roster, err := Load(strings.NewReader(csvData))
+	if err != nil {
+		t.Fatalf("unexpected error loading roster: %v", err)
+	}
+
+	if len(roster.Students) != 1 {
+		t.Fatalf("expected 1 unique student, got %d", len(roster.Students))
+	}
+	if len(roster.Duplicates) != 1 {
+		t.Fatalf("expected 1 duplicate report, got %d", len(roster.Duplicates))
+	}
+	if roster.Students[0].UUID != "be556f7b-ab4b-4be7-82fb-9be45202ddd7" {
+		t.Errorf("expected lowercase UUID, got %q", roster.Students[0].UUID)
+	}
+	if roster.Duplicates[0].UUID != "be556f7b-ab4b-4be7-82fb-9be45202ddd7" {
+		t.Errorf("expected duplicate report UUID to be lowercase, got %q", roster.Duplicates[0].UUID)
+	}
+}
+

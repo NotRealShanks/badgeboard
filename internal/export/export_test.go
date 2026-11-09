@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"encoding/csv"
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/NotRealShanks/badgeboard/internal/model"
+	"github.com/NotRealShanks/badgeboard/internal/parse"
 )
 
 func sampleResults() []model.ProfileResult {
@@ -140,6 +142,17 @@ func TestJSONExport_Anonymized(t *testing.T) {
 		if strings.Contains(r.DisplayName, "Alice") {
 			t.Errorf("real name leaked in display name: %s", r.DisplayName)
 		}
+		if r.Student.ProfileURL != "" {
+			t.Errorf("profile URL not scrubbed in anonymized student: %s", r.Student.ProfileURL)
+		}
+		if r.Student.UUID != "" {
+			t.Errorf("uuid not scrubbed in anonymized student: %s", r.Student.UUID)
+		}
+		for _, b := range r.Badges {
+			if b.URL != "" {
+				t.Errorf("badge URL not scrubbed in anonymized badge: %s", b.URL)
+			}
+		}
 	}
 }
 
@@ -196,6 +209,12 @@ func TestCSVExport_Anonymized(t *testing.T) {
 	if !strings.Contains(aliceRow[0], "A. J.") {
 		t.Errorf("expected initials in anonymized CSV, got: %s", aliceRow[0])
 	}
+	if aliceRow[1] != "" {
+		t.Errorf("profile URL must be empty in anonymized CSV, got %q", aliceRow[1])
+	}
+	if aliceRow[2] != "" {
+		t.Errorf("UUID must be empty in anonymized CSV, got %q", aliceRow[2])
+	}
 }
 
 func TestAnonymizeName_EdgeCases(t *testing.T) {
@@ -215,5 +234,139 @@ func TestAnonymizeName_EdgeCases(t *testing.T) {
 	anonShort := AnonymizeName("Shorty", "abc")
 	if !strings.Contains(anonShort, "(abc)") {
 		t.Errorf("expected (abc), got: %s", anonShort)
+	}
+}
+
+func TestAnonymize_RealSampleAudit(t *testing.T) {
+	sampleHTML, err := os.ReadFile("../../testdata/sample_profile.html")
+	if err != nil {
+		t.Fatalf("failed reading sample profile HTML: %v", err)
+	}
+
+	parsed, err := parse.Parse(sampleHTML)
+	if err != nil {
+		t.Fatalf("parse real sample failed: %v", err)
+	}
+
+	fullUUID := "be556f7b-ab4b-4be7-82fb-9be45202ddd7"
+	fullURL := "https://www.skills.google/public_profiles/" + fullUUID
+	rosterName := "Sample Learnereloper"
+	email := "litmus.dev@example.com"
+	h1DisplayName := "Sample Learner"
+
+	totalBadges := len(parsed.Badges)
+	res := model.ProfileResult{
+		Student: model.Student{
+			Name:       rosterName,
+			Email:      email,
+			Team:       "Core Team",
+			UUID:       fullUUID,
+			ProfileURL: fullURL,
+		},
+		DisplayName:   parsed.DisplayName,
+		Status:        model.EvaluateStatus(totalBadges, 10, totalBadges, parsed.IsPrivate),
+		CountedBadges: totalBadges,
+		TotalBadges:   totalBadges,
+		Badges:        parsed.Badges,
+		Points:        parsed.Points,
+		League:        parsed.League,
+	}
+
+	// Assert preconditions
+	if res.DisplayName != h1DisplayName {
+		t.Fatalf("Sample Learner", h1DisplayName, res.DisplayName)
+	}
+	if len(res.Badges) != 10 {
+		t.Fatalf("expected 10 badges, got %d", len(res.Badges))
+	}
+
+	// 1. Check JSON anonymized export
+	var jsonBuf bytes.Buffer
+	if err := JSON(&jsonBuf, []model.ProfileResult{res}, 10, true); err != nil {
+		t.Fatalf("JSON export failed: %v", err)
+	}
+	jsonOut := jsonBuf.String()
+
+	// Forbidden strings that must NEVER appear in anonymized output
+	forbiddenStrings := []string{
+		fullUUID,
+		fullURL,
+		h1DisplayName,
+		rosterName,
+		email,
+		"/badges/",
+		"public_profiles/" + fullUUID,
+	}
+
+	for _, s := range forbiddenStrings {
+		if strings.Contains(jsonOut, s) {
+			t.Errorf("Anonymized JSON audit failed: found forbidden string %q in output", s)
+		}
+	}
+
+	// 2. Check CSV anonymized export
+	var csvBuf bytes.Buffer
+	if err := CSV(&csvBuf, []model.ProfileResult{res}, 10, true); err != nil {
+		t.Fatalf("CSV export failed: %v", err)
+	}
+	csvOut := csvBuf.String()
+
+	for _, s := range forbiddenStrings {
+		if strings.Contains(csvOut, s) {
+			t.Errorf("Anonymized CSV audit failed: found forbidden string %q in output", s)
+		}
+	}
+}
+
+func TestCSVExport_FormulaInjectionNeutralized(t *testing.T) {
+	maliciousResults := []model.ProfileResult{
+		{
+			Student: model.Student{
+				Name:       "=cmd|' /C calc'!A0",
+				ProfileURL: "+https://www.skills.google/public_profiles/11111111-2222-3333-4444-555555555555",
+				UUID:       "-11111111-2222-3333-4444-555555555555",
+			},
+			DisplayName: "@Admin",
+			Status:      model.StatusComplete,
+			League:      "\tTabLeague",
+			Error:       "\rCarriageReturnError",
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := CSV(&buf, maliciousResults, 10, false); err != nil {
+		t.Fatalf("CSV export failed: %v", err)
+	}
+
+	reader := csv.NewReader(&buf)
+	records, err := reader.ReadAll()
+	if err != nil {
+		t.Fatalf("reading CSV failed: %v", err)
+	}
+
+	if len(records) != 2 {
+		t.Fatalf("expected 2 records, got %d", len(records))
+	}
+
+	row := records[1]
+	// row[0] is Name: was "=cmd|' /C calc'!A0" -> must become "'=cmd|' /C calc'!A0"
+	if row[0] != "'=cmd|' /C calc'!A0" {
+		t.Errorf("expected neutralized name, got %q", row[0])
+	}
+	// row[1] is ProfileURL: was "+https..." -> must become "'+https..."
+	if row[1] != "'+https://www.skills.google/public_profiles/11111111-2222-3333-4444-555555555555" {
+		t.Errorf("expected neutralized URL, got %q", row[1])
+	}
+	// row[2] is UUID: was "-1111..." -> must become "'-1111..."
+	if row[2] != "'-11111111-2222-3333-4444-555555555555" {
+		t.Errorf("expected neutralized UUID, got %q", row[2])
+	}
+	// row[8] is League: was "\tTabLeague" -> must become "'\tTabLeague"
+	if row[8] != "'\tTabLeague" {
+		t.Errorf("expected neutralized League, got %q", row[8])
+	}
+	// row[10] is Error: was "\rCarriageReturnError" -> must become "'\rCarriageReturnError"
+	if row[10] != "'\rCarriageReturnError" {
+		t.Errorf("expected neutralized Error, got %q", row[10])
 	}
 }

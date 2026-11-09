@@ -1,4 +1,4 @@
-# Binaries for programs and plugins
+# Binaries and build artifacts
 *.exe
 *.exe~
 *.dll
@@ -7,19 +7,26 @@
 bin/
 dist/
 
-# Test binary, built with 'go test -c'
+# Test binaries and coverage
 *.test
-
-# Output of the go coverage tool
 *.out
+coverage.txt
 
-# Go workspace file
+# Go workspace
 go.work
 
-# Badgeboard local cache and data
+# Environment & Secrets
+.env*
+*.env
+
+# Local caches
 .cache/
 .badgeboard_cache/
-data/results.json
-data/real_*.csv
-*.local.toml
 
+# Local data & rosters (never commit real rosters or generated campaign data)
+data/
+roster*.csv
+!testdata/sample_roster.csv
+
+# Local configs
+*.local.toml

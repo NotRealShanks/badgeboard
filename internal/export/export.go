@@ -16,15 +16,15 @@ import (
 
 // Summary provides high-level aggregation metrics for exports and dashboards.
 type Summary struct {
-	GeneratedAt        time.Time `json:"generated_at"`
-	Goal               int       `json:"goal"`
-	TotalStudents      int       `json:"total_students"`
-	CompleteCount      int       `json:"complete_count"`
-	InProgressCount    int       `json:"in_progress_count"`
-	NoBadgesCount      int       `json:"no_badges_count"`
-	PrivateOrNotFound  int       `json:"private_or_not_found_count"`
-	ErrorCount         int       `json:"error_count"`
-	Anonymized         bool      `json:"anonymized"`
+	GeneratedAt       time.Time `json:"generated_at"`
+	Goal              int       `json:"goal"`
+	TotalStudents     int       `json:"total_students"`
+	CompleteCount     int       `json:"complete_count"`
+	InProgressCount   int       `json:"in_progress_count"`
+	NoBadgesCount     int       `json:"no_badges_count"`
+	PrivateOrNotFound int       `json:"private_or_not_found_count"`
+	ErrorCount        int       `json:"error_count"`
+	Anonymized        bool      `json:"anonymized"`
 }
 
 // ExportPayload wraps the structured JSON output consumed by the dashboard and CLI export.
@@ -65,24 +65,45 @@ func ComputeSummary(results []model.ProfileResult, goal int, anonymized bool) Su
 }
 
 // AnonymizeResult produces a privacy-preserving copy of a ProfileResult.
-// Replaces student names with initials and short hash, removes email, and sanitizes display name.
+// In anonymized mode:
+// - Roster name is replaced with initials + short 4-char UUID suffix
+// - Display name is replaced with the same anonymized pseudonym
+// - Email is scrubbed
+// - Profile URL and full UUID are scrubbed
+// - Per-badge URLs are dropped
 func AnonymizeResult(r model.ProfileResult) model.ProfileResult {
 	copyRes := r
 
-	anonName := AnonymizeName(r.Student.Name, r.Student.UUID)
+	sourceName := r.Student.Name
+	if sourceName == "" {
+		sourceName = r.DisplayName
+	}
+
+	anonName := AnonymizeName(sourceName, r.Student.UUID)
 	copyRes.Student.Name = anonName
-	copyRes.Student.Email = "" // Scrub email entirely
+	copyRes.Student.ProfileURL = ""
+	copyRes.Student.UUID = ""
+	copyRes.Student.Email = ""
 	copyRes.Student.Team = r.Student.Team
 
 	if r.DisplayName != "" {
 		copyRes.DisplayName = anonName
 	}
 
+	// Drop per-badge URLs in anonymized output
+	if len(r.Badges) > 0 {
+		copyRes.Badges = make([]model.BadgeRecord, len(r.Badges))
+		for i, b := range r.Badges {
+			copyRes.Badges[i] = b
+			copyRes.Badges[i].URL = ""
+		}
+	}
+
 	return copyRes
 }
 
-// AnonymizeName produces deterministic initials or short pseudonyms.
-// E.g. "Alice Johnson" -> "A. J. (ddd7)" or "Student-a1b2c3".
+// AnonymizeName produces deterministic initials or short pseudonyms with a 4-char suffix.
+// E.g. "Alice Johnson" with UUID "...ddd7" -> "A. J. (ddd7)".
 func AnonymizeName(name, uuid string) string {
 	uuidSuffix := ""
 	cleanUUID := strings.TrimSpace(uuid)
@@ -97,7 +118,7 @@ func AnonymizeName(name, uuid string) string {
 
 	trimmedName := strings.TrimSpace(name)
 	if trimmedName == "" {
-		return fmt.Sprintf("Participant %s", uuidSuffix)
+		return fmt.Sprintf("Participant (%s)", uuidSuffix)
 	}
 
 	parts := strings.Fields(trimmedName)
@@ -112,6 +133,20 @@ func AnonymizeName(name, uuid string) string {
 		}
 	}
 	return fmt.Sprintf("%s (%s)", strings.Join(initials, " "), uuidSuffix)
+}
+
+// sanitizeCSVField neutralizes formula injection in spreadsheets.
+// Cells beginning with '=', '+', '-', '@', '\t', or '\r' are prefixed with a single quote.
+func sanitizeCSVField(s string) string {
+	if s == "" {
+		return ""
+	}
+	switch s[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + s
+	default:
+		return s
+	}
 }
 
 // JSON exports results and summary as formatted JSON to w.
@@ -139,7 +174,6 @@ func CSV(w io.Writer, results []model.ProfileResult, goal int, anonymize bool) e
 	writer := csv.NewWriter(w)
 	defer writer.Flush()
 
-	// Write header
 	header := []string{
 		"Name",
 		"Profile URL",
@@ -173,17 +207,17 @@ func CSV(w io.Writer, results []model.ProfileResult, goal int, anonymize bool) e
 		}
 
 		record := []string{
-			res.Student.Name,
-			res.Student.ProfileURL,
-			res.Student.UUID,
-			res.Status.String(),
-			strconv.Itoa(res.CountedBadges),
-			strconv.Itoa(res.TotalBadges),
-			strconv.Itoa(goal),
-			lastDate,
-			res.League,
-			strconv.Itoa(res.Points),
-			res.Error,
+			sanitizeCSVField(res.Student.Name),
+			sanitizeCSVField(res.Student.ProfileURL),
+			sanitizeCSVField(res.Student.UUID),
+			sanitizeCSVField(res.Status.String()),
+			sanitizeCSVField(strconv.Itoa(res.CountedBadges)),
+			sanitizeCSVField(strconv.Itoa(res.TotalBadges)),
+			sanitizeCSVField(strconv.Itoa(goal)),
+			sanitizeCSVField(lastDate),
+			sanitizeCSVField(res.League),
+			sanitizeCSVField(strconv.Itoa(res.Points)),
+			sanitizeCSVField(res.Error),
 		}
 
 		if err := writer.Write(record); err != nil {
