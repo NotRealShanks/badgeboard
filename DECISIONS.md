@@ -27,8 +27,8 @@ This document records the core architectural decisions, design choices, and trad
 
 ## 4. Profile Pagination & "Load More" Verification
 - **Context**: In the initial campaign sample, the profile contains exactly 10 badges displayed on a single page. It is currently unverified whether profiles with 50+ or 100+ badges employ server-side pagination, infinite scrolling, or a "Load More" button.
-- **Decision**: Rather than silently returning a truncated badge count if an unhandled pagination control exists, the parser explicitly detects pagination controls (`.pagination`, `ql-pagination`, `[rel='next']`, or "load more" markers) and immediately fails with `StatusParseError` stating:
-  > `"profile pagination or 'load more' control detected; pagination parsing is unverified so aborting to avoid truncated badge count"`
+- **Decision**: Rather than silently returning a truncated badge count if an unhandled pagination control exists, the parser explicitly detects pagination controls (`.pagination`, `ql-pagination`, `[rel='next']`, or "load more" markers) scoped inside the badge container and immediately fails with `StatusParseError` stating:
+  > `"profile pagination or 'load more' control detected in badge container; pagination parsing is unverified so aborting to avoid truncated badge count"`
 - **Rationale**: Returning an accurate error forces immediate visibility into pagination requirements rather than silently reporting inaccurate, truncated badge progress to organizers.
 
 ---
@@ -47,17 +47,41 @@ This document records the core architectural decisions, design choices, and trad
 
 ---
 
-## 7. Privacy & Anonymized Public Deployment
+## 7. Global Cool-Down & Rate Limiting
+- **Context**: When a server responds with HTTP 429 Too Many Requests or 503 with a `Retry-After` header, pausing only the failing thread risks other concurrent threads continuing to bombard the endpoint.
+- **Decision**: When `Retry-After` is received, pause the shared limiter (`PauseUntil`) across all workers. Every retry attempt must re-acquire a rate limiter token.
+- **Retry-After Clamp**: Capped at 60s by default (configurable). If the server demands more than 60s, `badgeboard` immediately aborts with `ErrRateLimited` rather than hanging indefinitely.
+
+---
+
+## 8. Cache Policy & Short Negative Cache
+- **Context**: Failed network requests and unparsed pages should not pollute disk caches.
+- **Decision**:
+  - Cache only successful 200 responses (`StatusComplete`, `StatusInProgress`, `StatusNoBadges`) with standard TTL (6 hours).
+  - Never cache transient failures (`StatusRateLimited`, `StatusNetworkError`, `StatusParseError`).
+  - Cache `StatusPrivateOrNotFound` with a short separate negative TTL (15 minutes), so participants who make their profiles public can be refreshed quickly.
+- **Atomic Writes**: Uses temporary files and atomic `os.Rename` to prevent file corruption.
+
+---
+
+## 9. Redirect & Payload Safety
+- **Context**: Following arbitrary redirects or reading unbounded response streams exposes the engine to SSRF, open redirect abuse, or denial of service.
+- **Decision**:
+  - Redirects are capped at 5 hops and restricted strictly to authorized hosts (`skills.google`, `www.skills.google`, `cloudskillsboost.google`). Untrusted redirects return `ErrUntrustedRedirect`.
+  - All response bodies are wrapped in `io.LimitReader` (2 MB). Bodies exceeding 2 MB return `ErrResponseTooLarge`.
+
+---
+
+## 10. Privacy & Anonymized Public Deployment
 - **Context**: Roster files contain student names and emails. Campaign dashboards are often deployed publicly via GitHub Pages.
 - **Decision**: The CLI provides `--anonymize` for public output, and real roster files as well as `data/` artifacts are strictly gitignored. Only synthetic data is used for tests and public demos.
 - **Rationale**: Prevents accidental leakage of personally identifiable information (PII) to public repositories.
 
 ---
 
-## 8. Why Go?
+## 11. Why Go?
 - **Decision**: Implemented in Go 1.22+.
 - **Rationale**:
   - Single static binary distribution without runtime dependencies (Python, Node, Docker).
   - First-class concurrency (`sync`, channels, worker pools) for high-performance polite scraping.
   - Robust standard library for networking, testing, and HTTP mocking (`httptest`).
-

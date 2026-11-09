@@ -42,13 +42,14 @@ func WithClock(c Clock) Option {
 	}
 }
 
-// Limiter coordinates request rates and concurrency bounds.
+// Limiter coordinates request rates, concurrency bounds, and global cool-down pauses.
 type Limiter struct {
 	rps         float64
 	concurrency int
 	clock       Clock
 	rateLimiter *rate.Limiter
 	sem         chan struct{}
+	pausedUntil time.Time
 	mu          sync.Mutex
 }
 
@@ -77,36 +78,83 @@ func New(rps float64, concurrency int, opts ...Option) *Limiter {
 	return lim
 }
 
-// Wait blocks until the rate limiter permits an action according to RPS,
-// respecting context cancellation.
+// PauseUntil sets a global cool-down deadline across all workers sharing this limiter.
+// No worker can proceed through Wait() until the specified time has elapsed.
+func (l *Limiter) PauseUntil(until time.Time) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if until.After(l.pausedUntil) {
+		l.pausedUntil = until
+	}
+}
+
+// PauseFor pauses all workers sharing this limiter for the given duration.
+func (l *Limiter) PauseFor(d time.Duration) {
+	if d > 0 {
+		l.PauseUntil(l.clock.Now().Add(d))
+	}
+}
+
+// IsPaused returns true if the global cool-down is currently active.
+func (l *Limiter) IsPaused() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.clock.Now().Before(l.pausedUntil)
+}
+
+// Wait blocks until any global cool-down has expired AND the rate limiter permits an action.
 func (l *Limiter) Wait(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 
+	// 1. Check for global cool-down pause
 	l.mu.Lock()
-	r := l.rateLimiter.ReserveN(l.clock.Now(), 1)
+	now := l.clock.Now()
+	var pauseDelay time.Duration
+	if now.Before(l.pausedUntil) {
+		pauseDelay = l.pausedUntil.Sub(now)
+	}
+	l.mu.Unlock()
+
+	if pauseDelay > 0 {
+		if err := l.sleep(ctx, pauseDelay); err != nil {
+			return err
+		}
+	}
+
+	// 2. Reserve from underlying rate limiter
+	l.mu.Lock()
+	now = l.clock.Now()
+	r := l.rateLimiter.ReserveN(now, 1)
 	if !r.OK() {
 		l.mu.Unlock()
 		return fmt.Errorf("rate limiter burst capacity exceeded")
 	}
-	delay := r.DelayFrom(l.clock.Now())
+	delay := r.DelayFrom(now)
 	l.mu.Unlock()
 
 	if delay <= 0 {
 		return nil
 	}
 
-	// For custom test clocks, dispatch via clock.Sleep directly if context not canceled
+	return l.sleep(ctx, delay)
+}
+
+func (l *Limiter) sleep(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return ctx.Err()
+	}
+
 	if _, isReal := l.clock.(realClock); !isReal {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		l.clock.Sleep(delay)
+		l.clock.Sleep(d)
 		return ctx.Err()
 	}
 
-	timer := time.NewTimer(delay)
+	timer := time.NewTimer(d)
 	defer timer.Stop()
 
 	select {
@@ -135,8 +183,7 @@ func (l *Limiter) Release() {
 	}
 }
 
-// Take coordinates both rate limit acquisition and concurrency reservation.
-// It returns a release closure to be called when the task completes.
+// Take coordinates concurrency reservation, cool-down wait, and rate limit acquisition.
 func (l *Limiter) Take(ctx context.Context) (func(), error) {
 	if err := l.Acquire(ctx); err != nil {
 		return nil, err

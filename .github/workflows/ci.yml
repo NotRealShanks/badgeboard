@@ -8,8 +8,13 @@ on:
 
 jobs:
   test:
-    name: Lint & Test
+    name: Lint & Test (${{ matrix.tz }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        tz: [UTC, Asia/Kolkata]
+    env:
+      TZ: ${{ matrix.tz }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

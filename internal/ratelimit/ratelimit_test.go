@@ -50,7 +50,6 @@ func TestLimiter_DefaultsAndOptions(t *testing.T) {
 		t.Errorf("expected default concurrency %d, got %d", DefaultConcurrency, lim.concurrency)
 	}
 
-	// Double release is a safe no-op
 	lim.Release()
 }
 
@@ -58,12 +57,10 @@ func TestLimiter_RateWaitDeterministic(t *testing.T) {
 	start := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
 	clock := newFakeClock(start)
 
-	// 2 requests per second (500ms delay between consecutive requests)
 	lim := New(2.0, 2, WithClock(clock))
-
 	ctx := context.Background()
 
-	// First request: immediate (burst 1 available)
+	// First request: immediate
 	if err := lim.Wait(ctx); err != nil {
 		t.Fatalf("first Wait failed: %v", err)
 	}
@@ -82,16 +79,51 @@ func TestLimiter_RateWaitDeterministic(t *testing.T) {
 		t.Errorf("expected sleep duration 500ms, got %v", clock.sleepCalls[0])
 	}
 
-	// Total elapsed virtual time should be 500ms
 	if clock.totalSlept() != 500*time.Millisecond {
 		t.Errorf("expected 500ms total virtual sleep, got %v", clock.totalSlept())
 	}
+}
 
-	// Wait with canceled context on custom clock
-	cancCtx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if err := lim.Wait(cancCtx); err == nil {
-		t.Errorf("expected error on canceled context with custom clock")
+func TestLimiter_GlobalCoolDownPausesAllWorkers(t *testing.T) {
+	lim := New(100.0, 2) // High RPS so rate limiting doesn't block
+
+	// Trigger 200ms global cool-down pause
+	coolDown := 200 * time.Millisecond
+	startTime := time.Now()
+	lim.PauseFor(coolDown)
+
+	if !lim.IsPaused() {
+		t.Errorf("expected limiter to be in paused state")
+	}
+
+	var worker2Issued atomic.Bool
+	var wg sync.WaitGroup
+
+	// Worker 2 attempts to request during cool-down
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		err := lim.Wait(context.Background())
+		if err != nil {
+			return
+		}
+		// When Wait returns, cool-down must have expired
+		worker2Issued.Store(true)
+		elapsed := time.Since(startTime)
+		if elapsed < coolDown-20*time.Millisecond {
+			t.Errorf("worker 2 issued request before cool-down expired! elapsed: %v", elapsed)
+		}
+	}()
+
+	// Immediately check: worker 2 must NOT have issued request
+	time.Sleep(30 * time.Millisecond)
+	if worker2Issued.Load() {
+		t.Errorf("worker 2 issued request during global cool-down!")
+	}
+
+	wg.Wait()
+	if !worker2Issued.Load() {
+		t.Errorf("worker 2 never completed after cool-down")
 	}
 }
 
@@ -135,7 +167,6 @@ func TestLimiter_ConcurrencyBounded(t *testing.T) {
 func TestLimiter_ContextCancellation(t *testing.T) {
 	lim := New(1.0, 1)
 
-	// Consume the single concurrency slot
 	ctx := context.Background()
 	release, err := lim.Take(ctx)
 	if err != nil {
@@ -143,7 +174,6 @@ func TestLimiter_ContextCancellation(t *testing.T) {
 	}
 	defer release()
 
-	// Canceled context on Take
 	cancCtx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -155,13 +185,11 @@ func TestLimiter_ContextCancellation(t *testing.T) {
 		t.Errorf("expected context.Canceled, got %v", err)
 	}
 
-	// Canceled context on Wait
 	err = lim.Wait(cancCtx)
 	if err == nil {
 		t.Errorf("expected error on Wait with canceled context")
 	}
 
-	// Wait with real clock timer cancellation
 	waitCtx, waitCancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer waitCancel()
 	_ = lim.Wait(context.Background())

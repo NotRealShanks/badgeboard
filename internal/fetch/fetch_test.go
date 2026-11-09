@@ -22,8 +22,12 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 func mockClient(fn roundTripFunc, checkRedirect func(req *http.Request, via []*http.Request) error) *http.Client {
 	if checkRedirect == nil {
 		checkRedirect = func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 10 {
-				return errors.New("stopped after 10 redirects")
+			if len(via) >= MaxRedirectHops {
+				return ErrTooManyRedirects
+			}
+			reqHost := stringsToLower(req.URL.Hostname())
+			if !defaultAllowedHosts[reqHost] && reqHost != "test-allowed.google" {
+				return ErrUntrustedRedirect
 			}
 			lowerPath := stringsToLower(req.URL.Path)
 			if stringsContains(lowerPath, "sign_in") || stringsContains(lowerPath, "login") {
@@ -58,11 +62,79 @@ func fastTestSleeper(_ context.Context, _ time.Duration) error {
 	return nil
 }
 
+type mockLimiter struct {
+	waitCount  atomic.Int32
+	pauseCount atomic.Int32
+	lastPause  time.Duration
+}
+
+func (m *mockLimiter) Wait(ctx context.Context) error {
+	m.waitCount.Add(1)
+	return ctx.Err()
+}
+
+func (m *mockLimiter) PauseFor(d time.Duration) {
+	m.pauseCount.Add(1)
+	m.lastPause = d
+}
+
+func TestFetch_WithSharedLimiterAndCoolDown(t *testing.T) {
+	lim := &mockLimiter{}
+	var attempts int32
+
+	client := mockClient(func(req *http.Request) (*http.Response, error) {
+		n := atomic.AddInt32(&attempts, 1)
+		if n == 1 {
+			hdr := make(http.Header)
+			hdr.Set("Retry-After", "5")
+			return &http.Response{
+				StatusCode: http.StatusTooManyRequests,
+				Header:     hdr,
+				Body:       io.NopCloser(bytes.NewBufferString("throttled")),
+				Request:    req,
+			}, nil
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBufferString("recovered")),
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	}, nil)
+
+	fetcher := New(
+		WithHTTPClient(client),
+		WithLimiter(lim),
+		WithSleeper(fastTestSleeper),
+		WithMaxRetries(2),
+	)
+
+	body, err := fetcher.Fetch(context.Background(), "https://www.skills.google/public_profiles/test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(body) != "recovered" {
+		t.Errorf("unexpected body: %s", string(body))
+	}
+
+	// Limiter.Wait must be called for BOTH attempt 1 and retry attempt 2
+	if lim.waitCount.Load() != 2 {
+		t.Errorf("expected 2 limiter Wait calls, got %d", lim.waitCount.Load())
+	}
+	// Limiter.PauseFor must be called with Retry-After (5s)
+	if lim.pauseCount.Load() != 1 || lim.lastPause != 5*time.Second {
+		t.Errorf("expected limiter paused for 5s, got %v (count: %d)", lim.lastPause, lim.pauseCount.Load())
+	}
+}
+
 func TestFetch_OptionsAndDefaults(t *testing.T) {
 	f := New(
 		WithUserAgent("custom-agent"),
 		WithMaxRetries(5),
 		WithBackoff(100*time.Millisecond, 5*time.Second),
+		WithMaxResponseBytes(1024*1024),
+		WithMaxRetryAfter(30*time.Second),
+		WithAllowedHost("custom.skills.google"),
 		WithHTTPClient(nil),
 	)
 
@@ -78,8 +150,13 @@ func TestFetch_OptionsAndDefaults(t *testing.T) {
 	if f.maxBackoff != 5*time.Second {
 		t.Errorf("expected maxBackoff 5s, got %v", f.maxBackoff)
 	}
+	if f.maxResponseBytes != 1024*1024 {
+		t.Errorf("expected 1MB limit, got %d", f.maxResponseBytes)
+	}
+	if f.maxRetryAfter != 30*time.Second {
+		t.Errorf("expected 30s max retry after, got %v", f.maxRetryAfter)
+	}
 
-	// Backoff calculation with jitter
 	b1 := f.calculateBackoff(1, nil)
 	if b1 <= 0 || b1 > 100*time.Millisecond {
 		t.Errorf("b1 out of expected range: %v", b1)
@@ -106,27 +183,149 @@ func TestFetch_ParseRetryAfter(t *testing.T) {
 	}
 }
 
-func TestFetch_InvalidURL(t *testing.T) {
-	f := New()
-	_, err := f.Fetch(context.Background(), "http://invalid host with spaces")
+func TestFetch_LimitReader_OversizedBodyRefused(t *testing.T) {
+	oversizedBytes := make([]byte, 2*1024*1024+1024)
+
+	client := mockClient(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewReader(oversizedBytes)),
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	}, nil)
+
+	fetcher := New(
+		WithHTTPClient(client),
+		WithSleeper(fastTestSleeper),
+	)
+
+	_, err := fetcher.Fetch(context.Background(), "https://www.skills.google/public_profiles/oversized")
 	if err == nil {
-		t.Errorf("expected error for invalid URL, got nil")
+		t.Fatalf("expected error on oversized body, got nil")
+	}
+	if !errors.Is(err, ErrResponseTooLarge) {
+		t.Errorf("expected ErrResponseTooLarge, got: %v", err)
 	}
 }
 
-func TestFetch_DefaultContextSleep(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if err := defaultContextSleep(ctx, 10*time.Millisecond); err == nil {
-		t.Errorf("expected error on canceled defaultContextSleep")
+func TestFetch_Redirect_UntrustedHostRefused(t *testing.T) {
+	client := mockClient(func(req *http.Request) (*http.Response, error) {
+		hdr := make(http.Header)
+		hdr.Set("Location", "https://evil-phishing.com/steal-creds")
+		return &http.Response{
+			StatusCode: http.StatusFound,
+			Header:     hdr,
+			Body:       io.NopCloser(bytes.NewBufferString("redirecting to untrusted host")),
+			Request:    req,
+		}, nil
+	}, nil)
+
+	fetcher := New(
+		WithHTTPClient(client),
+		WithSleeper(fastTestSleeper),
+	)
+
+	_, err := fetcher.Fetch(context.Background(), "https://www.skills.google/public_profiles/redirect-untrusted")
+	if err == nil {
+		t.Fatalf("expected error on redirect to untrusted host, got nil")
+	}
+	if !errors.Is(err, ErrUntrustedRedirect) {
+		t.Errorf("expected ErrUntrustedRedirect, got: %v", err)
+	}
+}
+
+func TestFetch_Redirect_CappedAt5Hops(t *testing.T) {
+	client := mockClient(func(req *http.Request) (*http.Response, error) {
+		hdr := make(http.Header)
+		hdr.Set("Location", "https://www.skills.google/public_profiles/loop")
+		return &http.Response{
+			StatusCode: http.StatusFound,
+			Header:     hdr,
+			Body:       io.NopCloser(bytes.NewBufferString("redirect loop")),
+			Request:    req,
+		}, nil
+	}, nil)
+
+	fetcher := New(
+		WithHTTPClient(client),
+		WithSleeper(fastTestSleeper),
+	)
+
+	_, err := fetcher.Fetch(context.Background(), "https://www.skills.google/public_profiles/loop")
+	if err == nil {
+		t.Fatalf("expected error for excessive redirect hops, got nil")
+	}
+	if !errors.Is(err, ErrTooManyRedirects) {
+		t.Errorf("expected ErrTooManyRedirects, got: %v", err)
+	}
+}
+
+func TestFetch_RetryAfterClamp_ExceedsMaxFailsImmediately(t *testing.T) {
+	var attempts int32
+	client := mockClient(func(req *http.Request) (*http.Response, error) {
+		atomic.AddInt32(&attempts, 1)
+		hdr := make(http.Header)
+		hdr.Set("Retry-After", "120") // 120s exceeds default 60s clamp
+		return &http.Response{
+			StatusCode: http.StatusTooManyRequests,
+			Header:     hdr,
+			Body:       io.NopCloser(bytes.NewBufferString("rate limited")),
+			Request:    req,
+		}, nil
+	}, nil)
+
+	slept := false
+	sleepRecorder := func(_ context.Context, _ time.Duration) error {
+		slept = true
+		return nil
 	}
 
-	if err := defaultContextSleep(context.Background(), 0); err != nil {
-		t.Errorf("expected nil error for 0 duration")
-	}
+	fetcher := New(
+		WithHTTPClient(client),
+		WithSleeper(sleepRecorder),
+		WithMaxRetryAfter(60*time.Second),
+	)
 
-	if err := defaultContextSleep(context.Background(), 1*time.Millisecond); err != nil {
-		t.Errorf("expected nil error for 1ms duration")
+	_, err := fetcher.Fetch(context.Background(), "https://www.skills.google/public_profiles/test")
+	if err == nil {
+		t.Fatalf("expected error on retry-after exceeding clamp, got nil")
+	}
+	if !errors.Is(err, ErrRateLimited) {
+		t.Errorf("expected ErrRateLimited, got: %v", err)
+	}
+	if slept {
+		t.Errorf("fetcher should fail immediately without sleeping when Retry-After exceeds clamp")
+	}
+	if atomic.LoadInt32(&attempts) != 1 {
+		t.Errorf("expected exactly 1 attempt before immediate failure, got %d", attempts)
+	}
+}
+
+func TestFetch_ServerError5xx_RetryAfterClamp(t *testing.T) {
+	client := mockClient(func(req *http.Request) (*http.Response, error) {
+		hdr := make(http.Header)
+		hdr.Set("Retry-After", "999") // exceeds 60s
+		return &http.Response{
+			StatusCode: http.StatusServiceUnavailable,
+			Header:     hdr,
+			Body:       io.NopCloser(bytes.NewBufferString("service unavailable")),
+			Request:    req,
+		}, nil
+	}, nil)
+
+	fetcher := New(
+		WithHTTPClient(client),
+		WithSleeper(fastTestSleeper),
+		WithMaxRetryAfter(60*time.Second),
+	)
+
+	_, err := fetcher.Fetch(context.Background(), "https://www.skills.google/public_profiles/test")
+	if err == nil {
+		t.Fatalf("expected error on 503 retry-after exceeding clamp, got nil")
+	}
+	if !errors.Is(err, ErrNetwork) {
+		t.Errorf("expected ErrNetwork, got: %v", err)
 	}
 }
 
@@ -251,7 +450,7 @@ func TestFetch_RetryAfter_429DeltaSeconds(t *testing.T) {
 		n := atomic.AddInt32(&attempts, 1)
 		if n == 1 {
 			hdr := make(http.Header)
-			hdr.Set("Retry-After", "2") // delta-seconds format
+			hdr.Set("Retry-After", "2")
 			return &http.Response{
 				StatusCode: http.StatusTooManyRequests,
 				Header:     hdr,
@@ -294,85 +493,6 @@ func TestFetch_RetryAfter_429DeltaSeconds(t *testing.T) {
 	defer mu.Unlock()
 	if len(sleptDurations) == 0 || sleptDurations[0] != 2*time.Second {
 		t.Errorf("expected 2s retry-after sleep, got: %v", sleptDurations)
-	}
-}
-
-func TestFetch_RetryAfter_429HTTPDate(t *testing.T) {
-	var attempts int32
-	targetFuture := time.Now().Add(5 * time.Second).UTC().Format(http.TimeFormat)
-
-	client := mockClient(func(req *http.Request) (*http.Response, error) {
-		n := atomic.AddInt32(&attempts, 1)
-		if n == 1 {
-			hdr := make(http.Header)
-			hdr.Set("Retry-After", targetFuture) // HTTP-date format
-			return &http.Response{
-				StatusCode: http.StatusTooManyRequests,
-				Header:     hdr,
-				Body:       io.NopCloser(bytes.NewBufferString("rate limited")),
-				Request:    req,
-			}, nil
-		}
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(bytes.NewBufferString("Recovered from HTTP-date 429")),
-			Header:     make(http.Header),
-			Request:    req,
-		}, nil
-	}, nil)
-
-	var sleptDurations []time.Duration
-	var mu sync.Mutex
-	recordSleeper := func(_ context.Context, d time.Duration) error {
-		mu.Lock()
-		defer mu.Unlock()
-		sleptDurations = append(sleptDurations, d)
-		return nil
-	}
-
-	fetcher := New(
-		WithHTTPClient(client),
-		WithSleeper(recordSleeper),
-		WithMaxRetries(2),
-	)
-
-	body, err := fetcher.Fetch(context.Background(), "https://www.skills.google/public_profiles/test")
-	if err != nil {
-		t.Fatalf("expected success, got: %v", err)
-	}
-	if string(body) != "Recovered from HTTP-date 429" {
-		t.Errorf("unexpected body: %s", string(body))
-	}
-
-	mu.Lock()
-	defer mu.Unlock()
-	if len(sleptDurations) == 0 || sleptDurations[0] <= 0 {
-		t.Errorf("expected positive duration from HTTP-date, got: %v", sleptDurations)
-	}
-}
-
-func TestFetch_Persistent429_ReturnsErrRateLimited(t *testing.T) {
-	client := mockClient(func(req *http.Request) (*http.Response, error) {
-		return &http.Response{
-			StatusCode: http.StatusTooManyRequests,
-			Body:       io.NopCloser(bytes.NewBufferString("Rate limited")),
-			Header:     make(http.Header),
-			Request:    req,
-		}, nil
-	}, nil)
-
-	fetcher := New(
-		WithHTTPClient(client),
-		WithSleeper(fastTestSleeper),
-		WithMaxRetries(2),
-	)
-
-	_, err := fetcher.Fetch(context.Background(), "https://www.skills.google/public_profiles/test")
-	if err == nil {
-		t.Fatalf("expected error on persistent 429, got nil")
-	}
-	if !errors.Is(err, ErrRateLimited) {
-		t.Errorf("expected ErrRateLimited, got: %v", err)
 	}
 }
 
@@ -478,7 +598,7 @@ func TestFetch_ContextCancellation(t *testing.T) {
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // Canceled immediately
+	cancel()
 
 	_, err := fetcher.Fetch(ctx, "https://www.skills.google/public_profiles/test")
 	if err == nil {

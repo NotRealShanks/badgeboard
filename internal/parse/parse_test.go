@@ -330,33 +330,37 @@ func TestPaginationDetection(t *testing.T) {
 }
 
 func TestDateParsing_IndependentOfMachineTZ(t *testing.T) {
-	timezonesToTest := []string{"UTC", "Asia/Kolkata", "America/New_York", "Europe/London"}
-	origTZ := os.Getenv("TZ")
-	defer func() {
-		if origTZ != "" {
-			_ = os.Setenv("TZ", origTZ)
-		} else {
-			_ = os.Unsetenv("TZ")
-		}
-	}()
+	origLocal := time.Local
+	defer func() { time.Local = origLocal }()
+
+	testZones := []struct {
+		name string
+		loc  *time.Location
+	}{
+		{"UTC", time.UTC},
+		{"Asia/Kolkata", time.FixedZone("IST", 5*3600+1800)},
+		{"America/New_York", NYLocation()},
+		{"Europe/London", time.FixedZone("BST", 1*3600)},
+		{"Pacific/Honolulu", time.FixedZone("HST", -10*3600)},
+	}
 
 	dateStr := "Earned Nov  3, 2026 EST"
 	nyLoc := NYLocation()
 
-	for _, tz := range timezonesToTest {
-		t.Run("TZ="+tz, func(t *testing.T) {
-			_ = os.Setenv("TZ", tz)
+	for _, tc := range testZones {
+		t.Run("time.Local="+tc.name, func(t *testing.T) {
+			time.Local = tc.loc
 
 			parsed := ParseDate(dateStr)
 			if parsed.IsZero() {
-				t.Fatalf("failed to parse date %q in TZ %s", dateStr, tz)
+				t.Fatalf("failed to parse date %q with time.Local=%s", dateStr, tc.name)
 			}
 
 			inNY := parsed.In(nyLoc)
 			year, month, day := inNY.Date()
 
 			if year != 2026 || month != time.November || day != 3 {
-				t.Errorf("in TZ=%s, expected 2026-11-03, got %04d-%02d-%02d", tz, year, month, day)
+				t.Errorf("with time.Local=%s, expected 2026-11-03, got %04d-%02d-%02d", tc.name, year, month, day)
 			}
 		})
 	}

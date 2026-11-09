@@ -12,7 +12,10 @@ import (
 	"github.com/NotRealShanks/badgeboard/internal/model"
 )
 
-const DefaultTTL = 6 * time.Hour
+const (
+	DefaultTTL         = 6 * time.Hour
+	DefaultNegativeTTL = 15 * time.Minute
+)
 
 // Entry represents a cached profile response.
 type Entry struct {
@@ -32,9 +35,10 @@ func (e *Entry) IsExpired(ttl time.Duration, now time.Time) bool {
 
 // Cache manages file-based caching for profile responses.
 type Cache struct {
-	dir string
-	ttl time.Duration
-	now func() time.Time
+	dir         string
+	ttl         time.Duration
+	negativeTTL time.Duration
+	now         func() time.Time
 }
 
 // Option allows customizing Cache configuration.
@@ -45,6 +49,15 @@ func WithNow(nowFn func() time.Time) Option {
 	return func(c *Cache) {
 		if nowFn != nil {
 			c.now = nowFn
+		}
+	}
+}
+
+// WithNegativeTTL configures the cache expiration for PrivateOrNotFound profiles.
+func WithNegativeTTL(d time.Duration) Option {
+	return func(c *Cache) {
+		if d > 0 {
+			c.negativeTTL = d
 		}
 	}
 }
@@ -63,9 +76,10 @@ func New(dir string, ttl time.Duration, opts ...Option) (*Cache, error) {
 	}
 
 	c := &Cache{
-		dir: dir,
-		ttl: ttl,
-		now: time.Now,
+		dir:         dir,
+		ttl:         ttl,
+		negativeTTL: DefaultNegativeTTL,
+		now:         time.Now,
 	}
 
 	for _, opt := range opts {
@@ -80,7 +94,7 @@ func (c *Cache) filePath(uuid string) string {
 	return filepath.Join(c.dir, cleanUUID+".json")
 }
 
-// Get retrieves a cached profile entry if present and not expired.
+// Get retrieves a cached profile entry if present and not expired according to its status TTL.
 func (c *Cache) Get(uuid string) (*Entry, bool, error) {
 	path := c.filePath(uuid)
 	data, err := os.ReadFile(path)
@@ -93,12 +107,16 @@ func (c *Cache) Get(uuid string) (*Entry, bool, error) {
 
 	var entry Entry
 	if err := json.Unmarshal(data, &entry); err != nil {
-		// Corrupt cache file, treat as cache miss
 		return nil, false, nil
 	}
 
-	if entry.IsExpired(c.ttl, c.now()) {
-		// Expired entry
+	// Apply separate TTL based on status
+	effectiveTTL := c.ttl
+	if entry.Status == model.StatusPrivateOrNotFound {
+		effectiveTTL = c.negativeTTL
+	}
+
+	if entry.IsExpired(effectiveTTL, c.now()) {
 		return nil, false, nil
 	}
 
@@ -106,14 +124,18 @@ func (c *Cache) Get(uuid string) (*Entry, bool, error) {
 }
 
 // Set writes an entry to disk using atomic rename.
-// Transient statuses (rate_limited, network_error) are never cached.
+// Rule: Cache ONLY successful 200 pages (Complete, InProgress, NoBadges) and PrivateOrNotFound.
+// Never cache ParseError, RateLimited, NetworkError, or InvalidURL.
 func (c *Cache) Set(uuid string, entry *Entry) error {
 	if entry == nil {
 		return nil
 	}
 
-	// Rule: Do not cache transient failures
-	if entry.Status == model.StatusRateLimited || entry.Status == model.StatusNetworkError {
+	switch entry.Status {
+	case model.StatusComplete, model.StatusInProgress, model.StatusNoBadges, model.StatusPrivateOrNotFound:
+		// Allowed to be cached
+	default:
+		// Do not cache ParseError, RateLimited, NetworkError, etc.
 		return nil
 	}
 
@@ -127,14 +149,12 @@ func (c *Cache) Set(uuid string, entry *Entry) error {
 		return fmt.Errorf("marshaling cache entry: %w", err)
 	}
 
-	// Atomic write: write to temp file in same directory, then rename
 	tmpFile, err := os.CreateTemp(c.dir, "entry-*.tmp")
 	if err != nil {
 		return fmt.Errorf("creating temp cache file: %w", err)
 	}
 	tmpName := tmpFile.Name()
 
-	// Ensure cleanup in case of failure before rename
 	defer func() {
 		_ = os.Remove(tmpName)
 	}()
@@ -148,9 +168,7 @@ func (c *Cache) Set(uuid string, entry *Entry) error {
 	}
 
 	targetPath := c.filePath(uuid)
-	// On Windows, os.Rename replaces destination if it exists in Go 1.5+
 	if err := os.Rename(tmpName, targetPath); err != nil {
-		// If rename fails (e.g. Windows file locking), remove target first and retry once
 		_ = os.Remove(targetPath)
 		if retryErr := os.Rename(tmpName, targetPath); retryErr != nil {
 			return fmt.Errorf("renaming temp cache file to %q: %w", targetPath, retryErr)
