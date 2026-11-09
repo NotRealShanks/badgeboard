@@ -18,7 +18,8 @@ import (
 var (
 	badgeURLPattern = regexp.MustCompile(`(?i)(?:https?://[^/]+)?/public_profiles/[^/]+/badges/(\d+)`)
 	earnedPattern   = regexp.MustCompile(`(?i)Earned\s+([A-Za-z]{3}\s+\d{1,2},\s+\d{4})`)
-	pointsPattern   = regexp.MustCompile(`(?i)(\d+)\s+points?`)
+	pointsPattern   = regexp.MustCompile(`(?i)\b(\d+)\s+points\b`)
+	leaguePattern   = regexp.MustCompile(`(?i)\b[A-Za-z]+\s+League\b`)
 
 	// Server error markers that indicate HTTP or infrastructure failure rather than profile content
 	serverErrorKeywords = []string{
@@ -35,7 +36,7 @@ var (
 		"sign in to google skills",
 	}
 
-	// Markers indicating page pagination or unhandled load more controls
+	// Markers indicating page pagination or unhandled load more controls inside badge container
 	paginationSelectors = []string{
 		".pagination",
 		"ql-pagination",
@@ -59,8 +60,9 @@ var (
 	}()
 )
 
-// ErrPaginationDetected is returned when pagination or "load more" controls are encountered.
-var ErrPaginationDetected = errors.New("profile pagination or 'load more' control detected; pagination parsing is unverified so aborting to avoid truncated badge count")
+// ErrPaginationDetected is returned when pagination or "load more" controls are encountered
+// inside the badge list container.
+var ErrPaginationDetected = errors.New("profile pagination or 'load more' control detected in badge container; pagination parsing is unverified so aborting to avoid truncated badge count")
 
 // ProfileData holds the raw parsed components extracted from a public profile HTML page.
 // The parser does not know about goals or campaign windows; it extracts raw profile facts.
@@ -73,10 +75,6 @@ type ProfileData struct {
 }
 
 // Parse extracts profile data from raw HTML bytes without performing any I/O.
-// It distinguishes between:
-// - Valid public profiles (with 0 or more badges)
-// - Private or inaccessible profiles
-// - Parse errors (malformed HTML, server error pages, missing markers, or unverified pagination)
 func Parse(html []byte) (*ProfileData, error) {
 	if len(bytes.TrimSpace(html)) == 0 {
 		return nil, fmt.Errorf("empty html payload")
@@ -98,15 +96,31 @@ func Parse(html []byte) (*ProfileData, error) {
 		}
 	}
 
-	// 2. Check for unverified pagination or load more controls -> ParseError
-	for _, sel := range paginationSelectors {
-		if doc.Find(sel).Length() > 0 {
-			return nil, ErrPaginationDetected
-		}
+	// 2. Locate badge list container for scoped pagination checks and badge discovery
+	badgeContainer := doc.Find(".profile-badges").First()
+	if badgeContainer.Length() == 0 {
+		// Fallback: look for container holding elements with badge URLs
+		doc.Find("a").Each(func(_ int, a *goquery.Selection) {
+			if href, exists := a.Attr("href"); exists && badgeURLPattern.MatchString(href) {
+				if badgeContainer.Length() == 0 {
+					badgeContainer = a.Closest("div")
+				}
+			}
+		})
 	}
-	for _, kw := range paginationKeywords {
-		if strings.Contains(bodyText, kw) {
-			return nil, ErrPaginationDetected
+
+	// Scoped pagination check: ONLY inside the badge container, never triggered by nav or footer
+	if badgeContainer.Length() > 0 {
+		for _, sel := range paginationSelectors {
+			if badgeContainer.Find(sel).Length() > 0 {
+				return nil, ErrPaginationDetected
+			}
+		}
+		containerText := strings.ToLower(badgeContainer.Text())
+		for _, kw := range paginationKeywords {
+			if strings.Contains(containerText, kw) {
+				return nil, ErrPaginationDetected
+			}
 		}
 	}
 
@@ -123,11 +137,9 @@ func Parse(html []byte) (*ProfileData, error) {
 	lowerH1 := strings.ToLower(h1Text)
 
 	if h1Text == "" {
-		// Missing profile heading without private indicators is malformed profile markup
 		return nil, fmt.Errorf("missing profile h1 heading")
 	}
 
-	// Check if h1 text itself is a server error or private indicator
 	for _, kw := range serverErrorKeywords {
 		if strings.Contains(lowerH1, kw) {
 			return nil, fmt.Errorf("server error in h1: %s", h1Text)
@@ -139,25 +151,29 @@ func Parse(html []byte) (*ProfileData, error) {
 		}
 	}
 
-	// 5. Check for positive evidence of a real public profile:
-	// h1 alone is not enough to confirm a public profile. There must be at least one
-	// additional marker present in the real sample:
-	// - "Member since" text
-	// - League block (.profile-league or league headline)
-	// - Points block
-	// - Avatar (.profile-avatar or ql-avatar)
-	// - Profile badges container (.profile-badges)
+	// 5. Positive evidence of a real public profile:
+	// The h1 alone is not enough to confirm a public profile.
+	// Positive secondary markers present in the real sample:
+	// - Visible text: "member since" (e.g. "Member since 2026")
+	// - Visible text matching points pattern: e.g. "339 points"
+	// - Visible text in h2 matching league: e.g. "Silver League"
+	// - Structural presence of the badge list container
 	hasMemberSince := strings.Contains(bodyText, "member since")
-	hasLeague := doc.Find(".profile-league, h2.ql-headline-medium").Length() > 0
 	hasPoints := pointsPattern.MatchString(bodyText)
-	hasAvatar := doc.Find(".profile-avatar, ql-avatar").Length() > 0
+
+	hasLeague := false
+	doc.Find("h2").Each(func(_ int, h2 *goquery.Selection) {
+		if leaguePattern.MatchString(h2.Text()) {
+			hasLeague = true
+		}
+	})
 	hasBadgesContainer := doc.Find(".profile-badges").Length() > 0
 
-	hasPositiveProfileMarkers := hasMemberSince || hasLeague || hasPoints || hasAvatar || hasBadgesContainer
+	hasPositiveProfileMarkers := hasMemberSince || hasPoints || hasLeague || hasBadgesContainer
 
 	if !hasPositiveProfileMarkers {
-		// If zero badges and no positive profile markers, reject as ParseError (never report as NoBadges)
-		return nil, fmt.Errorf("missing positive profile markers (member since, league/points, avatar) to confirm public profile")
+		// Zero badges and missing profile markers must resolve to ParseError, never NoBadges
+		return nil, fmt.Errorf("missing positive profile markers (member since, points, league) to confirm public profile")
 	}
 
 	data := &ProfileData{
@@ -165,20 +181,24 @@ func Parse(html []byte) (*ProfileData, error) {
 		IsPrivate:   false,
 	}
 
-	// Extract optional League
-	if leagueEl := doc.Find(".profile-league h2").First(); leagueEl.Length() > 0 {
-		data.League = strings.TrimSpace(leagueEl.Text())
-	}
+	// Extract optional League from h2
+	doc.Find("h2").Each(func(_ int, h2 *goquery.Selection) {
+		text := strings.TrimSpace(h2.Text())
+		if leaguePattern.MatchString(text) && data.League == "" {
+			data.League = text
+		}
+	})
 
-	// Extract optional Points
-	if ptsEl := doc.Find(".profile-league strong").First(); ptsEl.Length() > 0 {
-		match := pointsPattern.FindStringSubmatch(ptsEl.Text())
-		if len(match) > 1 {
+	// Extract optional Points from strong or text
+	doc.Find("strong, p, span").Each(func(_ int, el *goquery.Selection) {
+		text := strings.TrimSpace(el.Text())
+		match := pointsPattern.FindStringSubmatch(text)
+		if len(match) > 1 && data.Points == 0 {
 			if pts, err := strconv.Atoi(match[1]); err == nil {
 				data.Points = pts
 			}
 		}
-	}
+	})
 
 	// Structural extraction of badge cards based on badge URL link pattern
 	doc.Find("a").Each(func(_ int, s *goquery.Selection) {
@@ -277,7 +297,6 @@ func Evaluate(data *ProfileData, student model.Student, goal int, badgeFilter fu
 		result.Student.Name = data.DisplayName
 	}
 
-	// Apply optional badge filter
 	eligibleBadges := make([]model.BadgeRecord, 0, len(data.Badges))
 	for _, b := range data.Badges {
 		if badgeFilter == nil || badgeFilter(b) {
@@ -289,7 +308,6 @@ func Evaluate(data *ProfileData, student model.Student, goal int, badgeFilter fu
 	result.CountedBadges = len(eligibleBadges)
 	result.BadgeCount = len(eligibleBadges)
 
-	// Determine latest badge earned date
 	var latest *time.Time
 	for _, b := range eligibleBadges {
 		if !b.EarnedAt.IsZero() {
@@ -301,7 +319,6 @@ func Evaluate(data *ProfileData, student model.Student, goal int, badgeFilter fu
 	}
 	result.LastBadgeEarnedAt = latest
 
-	// Evaluate status using model.EvaluateStatus
 	result.Status = model.EvaluateStatus(result.CountedBadges, goal, result.TotalBadges, data.IsPrivate)
 	return result
 }
@@ -323,11 +340,10 @@ func normalizeBadgeURL(raw string) string {
 
 // ParseDate parses the earned date as a calendar date in America/New_York timezone.
 // Handles strings like "Earned Nov  3, 2026 EST", "Nov  3, 2026", and single/double spaced days.
+// It never references time.Local.
 func ParseDate(dateStr string) time.Time {
 	clean := strings.TrimSpace(dateStr)
-	// Strip "Earned" prefix if present
 	clean = regexp.MustCompile(`(?i)^earned\s+`).ReplaceAllString(clean, "")
-	// Remove trailing time zone name if present (e.g. "EST", "EDT")
 	clean = regexp.MustCompile(`\s+[A-Za-z]{3,4}$`).ReplaceAllString(clean, "")
 
 	formats := []string{

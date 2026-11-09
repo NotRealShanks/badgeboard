@@ -60,3 +60,4 @@ This document records the core architectural decisions, design choices, and trad
   - Single static binary distribution without runtime dependencies (Python, Node, Docker).
   - First-class concurrency (`sync`, channels, worker pools) for high-performance polite scraping.
   - Robust standard library for networking, testing, and HTTP mocking (`httptest`).
+

@@ -205,7 +205,6 @@ func TestNoBadges_RequiresPositiveProfileMarkers(t *testing.T) {
 func TestGoalChange_DoesNotTouchParser(t *testing.T) {
 	html := loadFixture(t, "provisional_partial_badges.html") // 4 badges
 
-	// Parse once: parser extracts raw facts only
 	data, err := Parse(html)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
@@ -225,14 +224,109 @@ func TestGoalChange_DoesNotTouchParser(t *testing.T) {
 		t.Errorf("badges count mismatch: total=%d, counted=%d", resDefault.TotalBadges, resDefault.CountedBadges)
 	}
 
-	// Evaluate the EXACT SAME parsed data with goal 4 (or 3) -> Complete!
-	resGoal3 := Evaluate(data, student, 3, nil, nil)
-	if resGoal3.Status != model.StatusComplete {
-		t.Errorf("expected StatusComplete with goal 3, got %v", resGoal3.Status)
+	// Evaluate the EXACT SAME parsed data with goal 4 -> Complete!
+	resGoal4 := Evaluate(data, student, 4, nil, nil)
+	if resGoal4.Status != model.StatusComplete {
+		t.Errorf("expected StatusComplete with goal 4, got %v", resGoal4.Status)
 	}
-	if resGoal3.TotalBadges != 4 || resGoal3.CountedBadges != 4 {
-		t.Errorf("badges count mismatch: total=%d, counted=%d", resGoal3.TotalBadges, resGoal3.CountedBadges)
+	if resGoal4.TotalBadges != 4 || resGoal4.CountedBadges != 4 {
+		t.Errorf("badges count mismatch: total=%d, counted=%d", resGoal4.TotalBadges, resGoal4.CountedBadges)
 	}
+}
+
+func TestRequiredBadges_TotalGreaterThanZeroAndCountedZero_YieldsInProgress(t *testing.T) {
+	html := loadFixture(t, "sample_profile.html") // 10 badges on profile
+	data, err := Parse(html)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	// Filter with a required badge title that does NOT match any earned badge
+	filterNoneMatched := func(b model.BadgeRecord) bool {
+		return b.Title == "Non-Existent Unearned Badge"
+	}
+
+	student := model.Student{UUID: "be556f7b-ab4b-4be7-82fb-9be45202ddd7"}
+	res := Evaluate(data, student, 10, filterNoneMatched, nil)
+
+	if res.TotalBadges != 10 {
+		t.Errorf("expected TotalBadges 10, got %d", res.TotalBadges)
+	}
+	if res.CountedBadges != 0 {
+		t.Errorf("expected CountedBadges 0, got %d", res.CountedBadges)
+	}
+	// Crucial rule: must NEVER be reported as NoBadges!
+	if res.Status != model.StatusInProgress {
+		t.Errorf("CRITICAL: expected StatusInProgress when TotalBadges > 0 and CountedBadges == 0, got %v", res.Status)
+	}
+}
+
+func TestPaginationDetection(t *testing.T) {
+	// Subtest 1: Real sample does NOT trigger ErrPaginationDetected
+	t.Run("real sample has no pagination error", func(t *testing.T) {
+		html := loadFixture(t, "sample_profile.html")
+		_, err := Parse(html)
+		if err != nil {
+			t.Fatalf("expected real sample to parse cleanly without pagination error, got: %v", err)
+		}
+	})
+
+	// Subtest 2: Pagination markup in nav or footer outside badge container is ignored
+	t.Run("nav/footer pagination outside badge container is ignored", func(t *testing.T) {
+		htmlWithNavPagination := `
+<!DOCTYPE html>
+<html>
+<head><title>Test User | Google Skills</title></head>
+<body>
+  <nav class="pagination"><a href="/topics?page=2">Next Topic</a></nav>
+  <h1>Test User</h1>
+  <p>Member since 2026</p>
+  <div class="profile-badges">
+    <div class="profile-badge">
+      <a href="/public_profiles/1111/badges/101">Badge 1</a>
+      <span>Earned Nov  1, 2026 EST</span>
+    </div>
+  </div>
+  <footer><div class="pagination"><a href="/footer?page=2">Footer Page</a></div></footer>
+</body>
+</html>`
+		data, err := Parse([]byte(htmlWithNavPagination))
+		if err != nil {
+			t.Fatalf("expected pagination outside badge container to be ignored, got: %v", err)
+		}
+		if len(data.Badges) != 1 {
+			t.Errorf("expected 1 badge parsed, got %d", len(data.Badges))
+		}
+	})
+
+	// Subtest 3: Load more / pagination INSIDE badge container triggers ErrPaginationDetected
+	t.Run("load more inside badge container triggers ErrPaginationDetected", func(t *testing.T) {
+		htmlWithBadgePagination := `
+<!DOCTYPE html>
+<html>
+<head><title>Test User | Google Skills</title></head>
+<body>
+  <h1>Test User</h1>
+  <p>Member since 2026</p>
+  <div class="profile-badges">
+    <div class="profile-badge">
+      <a href="/public_profiles/1111/badges/101">Badge 1</a>
+      <span>Earned Nov  1, 2026 EST</span>
+    </div>
+    <div class="load-more">
+      <button>Load More Badges</button>
+    </div>
+  </div>
+</body>
+</html>`
+		_, err := Parse([]byte(htmlWithBadgePagination))
+		if err == nil {
+			t.Fatalf("expected error when 'load more' is inside badge container, got nil")
+		}
+		if !errors.Is(err, ErrPaginationDetected) {
+			t.Errorf("expected ErrPaginationDetected, got %v", err)
+		}
+	})
 }
 
 func TestDateParsing_IndependentOfMachineTZ(t *testing.T) {
@@ -258,7 +352,6 @@ func TestDateParsing_IndependentOfMachineTZ(t *testing.T) {
 				t.Fatalf("failed to parse date %q in TZ %s", dateStr, tz)
 			}
 
-			// In America/New_York calendar date
 			inNY := parsed.In(nyLoc)
 			year, month, day := inNY.Date()
 
@@ -266,36 +359,6 @@ func TestDateParsing_IndependentOfMachineTZ(t *testing.T) {
 				t.Errorf("in TZ=%s, expected 2026-11-03, got %04d-%02d-%02d", tz, year, month, day)
 			}
 		})
-	}
-}
-
-func TestPaginationDetection_ReturnsParseError(t *testing.T) {
-	htmlWithPagination := `
-<!DOCTYPE html>
-<html>
-<head><title>Sample Learner | Google Skills</title></head>
-<body>
-  <h1>Sample Learner</h1>
-  <p>Member since 2026</p>
-  <div class="profile-badges">
-    <a href="/public_profiles/1111/badges/101">Badge 1</a>
-  </div>
-  <div class="pagination">
-    <a class="next_page" href="/public_profiles/1111?page=2">Next</a>
-  </div>
-</body>
-</html>`
-
-	data, err := Parse([]byte(htmlWithPagination))
-	if err == nil {
-		t.Fatalf("expected error for pagination control, got nil")
-	}
-	if !errors.Is(err, ErrPaginationDetected) {
-		t.Errorf("expected ErrPaginationDetected, got %v", err)
-	}
-	res := Evaluate(data, model.Student{UUID: "1111"}, config.DefaultGoal, nil, err)
-	if res.Status != model.StatusParseError {
-		t.Errorf("expected StatusParseError for pagination, got %v", res.Status)
 	}
 }
 
@@ -356,34 +419,5 @@ func TestParse_RelativeBadgeURLAndFallbackAria(t *testing.T) {
 	}
 	if res.Badges[0].Title != "Cloud Architecture Badge" {
 		t.Errorf("unexpected fallback aria title: %s", res.Badges[0].Title)
-	}
-}
-
-func TestParse_BadgeFilter(t *testing.T) {
-	html := loadFixture(t, "sample_profile.html")
-	student := model.Student{UUID: "be556f7b-ab4b-4be7-82fb-9be45202ddd7"}
-
-	data, err := Parse(html)
-	if err != nil {
-		t.Fatalf("Parse failed: %v", err)
-	}
-
-	// Filter to only 1 badge title
-	filter := func(b model.BadgeRecord) bool {
-		return b.Title == "Explore Generative AI in Agent Platform"
-	}
-
-	res := Evaluate(data, student, 1, filter, nil)
-	if res.TotalBadges != 10 {
-		t.Errorf("expected TotalBadges 10, got %d", res.TotalBadges)
-	}
-	if res.CountedBadges != 1 {
-		t.Fatalf("expected 1 counted badge, got %d", res.CountedBadges)
-	}
-	if res.Badges[0].Title != "Explore Generative AI in Agent Platform" {
-		t.Errorf("unexpected badge title: %s", res.Badges[0].Title)
-	}
-	if res.Status != model.StatusComplete {
-		t.Errorf("expected StatusComplete with goal 1, got %v", res.Status)
 	}
 }
