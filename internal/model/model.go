@@ -9,11 +9,11 @@ import (
 type Status string
 
 const (
-	// StatusComplete indicates the student has completed the target number of badges (e.g. 10).
+	// StatusComplete indicates the student has completed the target number of badges.
 	StatusComplete Status = "complete"
 	// StatusInProgress indicates the student has earned badges but fewer than the target goal.
 	StatusInProgress Status = "in_progress"
-	// StatusNoBadges indicates the profile loaded and is public, but 0 badges have been earned.
+	// StatusNoBadges indicates the profile loaded, has positive profile markers, and has 0 badges.
 	StatusNoBadges Status = "no_badges"
 	// StatusPrivateOrNotFound indicates the profile is inaccessible, private, redirected to login, or 404.
 	StatusPrivateOrNotFound Status = "private_or_not_found"
@@ -47,6 +47,27 @@ func (s *Status) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// EvaluateStatus determines the profile status based on counted eligible badges, campaign goal,
+// total raw badges on profile, and private state.
+func EvaluateStatus(countedBadges int, goal int, totalBadges int, isPrivate bool) Status {
+	if isPrivate {
+		return StatusPrivateOrNotFound
+	}
+	if totalBadges == 0 {
+		return StatusNoBadges
+	}
+	if goal <= 0 {
+		goal = 10
+	}
+	if countedBadges >= goal {
+		return StatusComplete
+	}
+	if countedBadges > 0 {
+		return StatusInProgress
+	}
+	return StatusInProgress
+}
+
 // Student represents a participant loaded from a roster.
 type Student struct {
 	ProfileURL string `json:"profile_url"`
@@ -75,7 +96,9 @@ type ProfileResult struct {
 	League            string        `json:"league,omitempty"`
 	Points            int           `json:"points,omitempty"`
 	Badges            []BadgeRecord `json:"badges,omitempty"`
-	BadgeCount        int           `json:"badge_count"`
+	TotalBadges       int           `json:"total_badges"`
+	CountedBadges     int           `json:"counted_badges"`
+	BadgeCount        int           `json:"badge_count"` // Alias equal to CountedBadges
 	LastBadgeEarnedAt *time.Time    `json:"last_badge_earned_at,omitempty"`
 	Error             string        `json:"error,omitempty"`
 	FetchedAt         time.Time     `json:"fetched_at"`

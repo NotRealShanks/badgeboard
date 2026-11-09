@@ -191,24 +191,4 @@ func TestOptionalFeatures_Filtering(t *testing.T) {
 	}
 }
 
-func TestEvaluateStatus(t *testing.T) {
-	cfg := &Config{Goal: 10}
 
-	if st := cfg.EvaluateStatus(10); st != model.StatusComplete {
-		t.Errorf("expected complete, got %v", st)
-	}
-	if st := cfg.EvaluateStatus(12); st != model.StatusComplete {
-		t.Errorf("expected complete for >goal, got %v", st)
-	}
-	if st := cfg.EvaluateStatus(9); st != model.StatusInProgress {
-		t.Errorf("expected in_progress, got %v", st)
-	}
-	if st := cfg.EvaluateStatus(0); st != model.StatusNoBadges {
-		t.Errorf("expected no_badges, got %v", st)
-	}
-
-	var nilCfg *Config
-	if st := nilCfg.EvaluateStatus(10); st != model.StatusComplete {
-		t.Errorf("expected complete with nil config, got %v", st)
-	}
-}

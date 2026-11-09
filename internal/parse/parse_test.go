@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/NotRealShanks/badgeboard/internal/config"
 	"github.com/NotRealShanks/badgeboard/internal/model"
@@ -30,14 +31,25 @@ func TestPhase1Gate_RealSample(t *testing.T) {
 		UUID:       "be556f7b-ab4b-4be7-82fb-9be45202ddd7",
 	}
 
-	result := ParseResult(html, student, config.DefaultConfig())
+	data, err := Parse(html)
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+
+	result := Evaluate(data, student, config.DefaultGoal, nil, nil)
 
 	if result.Status != model.StatusComplete {
 		t.Fatalf("expected status %v, got %v (err: %s)", model.StatusComplete, result.Status, result.Error)
 	}
 
+	if result.TotalBadges != 10 {
+		t.Fatalf("GATE FAILURE: expected exactly 10 total badges, got %d", result.TotalBadges)
+	}
+	if result.CountedBadges != 10 {
+		t.Fatalf("GATE FAILURE: expected exactly 10 counted badges, got %d", result.CountedBadges)
+	}
 	if result.BadgeCount != 10 {
-		t.Fatalf("GATE FAILURE: expected exactly 10 badges, got %d", result.BadgeCount)
+		t.Fatalf("GATE FAILURE: expected BadgeCount alias 10, got %d", result.BadgeCount)
 	}
 
 	if len(result.Badges) != 10 {
@@ -48,7 +60,6 @@ func TestPhase1Gate_RealSample(t *testing.T) {
 		t.Errorf("Sample Learner", "Sample Learner", result.DisplayName)
 	}
 
-	// When student name was empty, DisplayName should populate student name
 	if result.Student.Name != "Sample Learner" {
 		Sample Learner, got %q", "Sample Learner", result.Student.Name)
 	}
@@ -70,7 +81,6 @@ func TestPhase1Gate_RealSample(t *testing.T) {
 		t.Errorf("expected last badge year %d, got %d", expectedLastYear, result.LastBadgeEarnedAt.Year())
 	}
 
-	// Verify all badges have titles, IDs, and valid earned dates
 	for i, badge := range result.Badges {
 		if badge.ID == "" {
 			t.Errorf("badge %d missing ID", i)
@@ -89,42 +99,48 @@ func TestParse_ProvisionalFixtures(t *testing.T) {
 		name          string
 		fixtureFile   string
 		expectStatus  model.Status
-		expectCount   int
+		expectTotal   int
+		expectCounted int
 		expectDisplay string
 	}{
 		{
 			name:          "Provisional zero badges (public profile, 0 badges)",
 			fixtureFile:   "provisional_zero_badges.html",
 			expectStatus:  model.StatusNoBadges,
-			expectCount:   0,
+			expectTotal:   0,
+			expectCounted: 0,
 			expectDisplay: "Zero Badges Student",
 		},
 		{
 			name:          "Provisional partial badges (4 badges)",
 			fixtureFile:   "provisional_partial_badges.html",
 			expectStatus:  model.StatusInProgress,
-			expectCount:   4,
+			expectTotal:   4,
+			expectCounted: 4,
 			expectDisplay: "Partial Student",
 		},
 		{
 			name:          "Provisional over 10 badges (12 badges)",
 			fixtureFile:   "provisional_over_10_badges.html",
 			expectStatus:  model.StatusComplete,
-			expectCount:   12,
+			expectTotal:   12,
+			expectCounted: 12,
 			expectDisplay: "Overachiever Student",
 		},
 		{
 			name:          "Provisional private or not found (must NEVER be reported as zero badges)",
 			fixtureFile:   "provisional_private_or_not_found.html",
 			expectStatus:  model.StatusPrivateOrNotFound,
-			expectCount:   0,
+			expectTotal:   0,
+			expectCounted: 0,
 			expectDisplay: "",
 		},
 		{
-			name:          "Malformed HTML / 502 error",
+			name:          "Malformed HTML / 502 error must resolve to ParseError, not PrivateOrNotFound",
 			fixtureFile:   "malformed.html",
-			expectStatus:  model.StatusPrivateOrNotFound,
-			expectCount:   0,
+			expectStatus:  model.StatusParseError,
+			expectTotal:   0,
+			expectCounted: 0,
 			expectDisplay: "",
 		},
 	}
@@ -133,13 +149,17 @@ func TestParse_ProvisionalFixtures(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			html := loadFixture(t, tc.fixtureFile)
 			student := model.Student{UUID: "test-uuid"}
-			res := ParseResult(html, student, config.DefaultConfig())
+			data, err := Parse(html)
+			res := Evaluate(data, student, config.DefaultGoal, nil, err)
 
 			if res.Status != tc.expectStatus {
-				t.Errorf("expected status %v, got %v", tc.expectStatus, res.Status)
+				t.Errorf("expected status %v, got %v (err: %s)", tc.expectStatus, res.Status, res.Error)
 			}
-			if res.BadgeCount != tc.expectCount {
-				t.Errorf("expected badge count %d, got %d", tc.expectCount, res.BadgeCount)
+			if res.TotalBadges != tc.expectTotal {
+				t.Errorf("expected total badges %d, got %d", tc.expectTotal, res.TotalBadges)
+			}
+			if res.CountedBadges != tc.expectCounted {
+				t.Errorf("expected counted badges %d, got %d", tc.expectCounted, res.CountedBadges)
 			}
 			if tc.expectDisplay != "" && res.DisplayName != tc.expectDisplay {
 				t.Errorf("Sample Learner", tc.expectDisplay, res.DisplayName)
@@ -148,9 +168,141 @@ func TestParse_ProvisionalFixtures(t *testing.T) {
 	}
 }
 
+func TestNoBadges_RequiresPositiveProfileMarkers(t *testing.T) {
+	// Case A: h1 present with no other markers and zero badges -> must be ParseError, NEVER NoBadges
+	htmlWithoutMarkers := `
+<!DOCTYPE html>
+<html>
+<head><title>Some Random Page</title></head>
+<body>
+  <h1>John Doe</h1>
+  <p>Just a random page with zero profile markers.</p>
+</body>
+</html>`
+	data, err := Parse([]byte(htmlWithoutMarkers))
+	res := Evaluate(data, model.Student{UUID: "123"}, config.DefaultGoal, nil, err)
+	if res.Status != model.StatusParseError {
+		t.Errorf("expected StatusParseError for h1 with no markers, got %v", res.Status)
+	}
+
+	// Case B: h1 present with explicit private profile message -> must be PrivateOrNotFound
+	htmlPrivateWithMessage := `
+<!DOCTYPE html>
+<html>
+<head><title>User Profile | Google Skills</title></head>
+<body>
+  <h1>Private User</h1>
+  <div class="notice">This profile is private.</div>
+</body>
+</html>`
+	dataPriv, errPriv := Parse([]byte(htmlPrivateWithMessage))
+	resPriv := Evaluate(dataPriv, model.Student{UUID: "123"}, config.DefaultGoal, nil, errPriv)
+	if resPriv.Status != model.StatusPrivateOrNotFound {
+		t.Errorf("expected StatusPrivateOrNotFound for h1 with private message, got %v", resPriv.Status)
+	}
+}
+
+func TestGoalChange_DoesNotTouchParser(t *testing.T) {
+	html := loadFixture(t, "provisional_partial_badges.html") // 4 badges
+
+	// Parse once: parser extracts raw facts only
+	data, err := Parse(html)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	if len(data.Badges) != 4 {
+		t.Fatalf("expected 4 raw badges, got %d", len(data.Badges))
+	}
+
+	student := model.Student{UUID: "student-4"}
+
+	// Evaluate with default goal 10 -> InProgress
+	resDefault := Evaluate(data, student, 10, nil, nil)
+	if resDefault.Status != model.StatusInProgress {
+		t.Errorf("expected StatusInProgress with goal 10, got %v", resDefault.Status)
+	}
+	if resDefault.TotalBadges != 4 || resDefault.CountedBadges != 4 {
+		t.Errorf("badges count mismatch: total=%d, counted=%d", resDefault.TotalBadges, resDefault.CountedBadges)
+	}
+
+	// Evaluate the EXACT SAME parsed data with goal 4 (or 3) -> Complete!
+	resGoal3 := Evaluate(data, student, 3, nil, nil)
+	if resGoal3.Status != model.StatusComplete {
+		t.Errorf("expected StatusComplete with goal 3, got %v", resGoal3.Status)
+	}
+	if resGoal3.TotalBadges != 4 || resGoal3.CountedBadges != 4 {
+		t.Errorf("badges count mismatch: total=%d, counted=%d", resGoal3.TotalBadges, resGoal3.CountedBadges)
+	}
+}
+
+func TestDateParsing_IndependentOfMachineTZ(t *testing.T) {
+	timezonesToTest := []string{"UTC", "Asia/Kolkata", "America/New_York", "Europe/London"}
+	origTZ := os.Getenv("TZ")
+	defer func() {
+		if origTZ != "" {
+			_ = os.Setenv("TZ", origTZ)
+		} else {
+			_ = os.Unsetenv("TZ")
+		}
+	}()
+
+	dateStr := "Earned Nov  3, 2026 EST"
+	nyLoc := NYLocation()
+
+	for _, tz := range timezonesToTest {
+		t.Run("TZ="+tz, func(t *testing.T) {
+			_ = os.Setenv("TZ", tz)
+
+			parsed := ParseDate(dateStr)
+			if parsed.IsZero() {
+				t.Fatalf("failed to parse date %q in TZ %s", dateStr, tz)
+			}
+
+			// In America/New_York calendar date
+			inNY := parsed.In(nyLoc)
+			year, month, day := inNY.Date()
+
+			if year != 2026 || month != time.November || day != 3 {
+				t.Errorf("in TZ=%s, expected 2026-11-03, got %04d-%02d-%02d", tz, year, month, day)
+			}
+		})
+	}
+}
+
+func TestPaginationDetection_ReturnsParseError(t *testing.T) {
+	htmlWithPagination := `
+<!DOCTYPE html>
+<html>
+<head><title>Sample Learner | Google Skills</title></head>
+<body>
+  <h1>Sample Learner</h1>
+  <p>Member since 2026</p>
+  <div class="profile-badges">
+    <a href="/public_profiles/1111/badges/101">Badge 1</a>
+  </div>
+  <div class="pagination">
+    <a class="next_page" href="/public_profiles/1111?page=2">Next</a>
+  </div>
+</body>
+</html>`
+
+	data, err := Parse([]byte(htmlWithPagination))
+	if err == nil {
+		t.Fatalf("expected error for pagination control, got nil")
+	}
+	if !errors.Is(err, ErrPaginationDetected) {
+		t.Errorf("expected ErrPaginationDetected, got %v", err)
+	}
+	res := Evaluate(data, model.Student{UUID: "1111"}, config.DefaultGoal, nil, err)
+	if res.Status != model.StatusParseError {
+		t.Errorf("expected StatusParseError for pagination, got %v", res.Status)
+	}
+}
+
 func TestParse_EmptyInput(t *testing.T) {
 	student := model.Student{UUID: "empty"}
-	res := ParseResult([]byte("   "), student, config.DefaultConfig())
+	data, err := Parse([]byte("   "))
+	res := Evaluate(data, student, config.DefaultGoal, nil, err)
 	if res.Status != model.StatusParseError {
 		t.Errorf("expected StatusParseError for empty HTML, got %v", res.Status)
 	}
@@ -158,7 +310,7 @@ func TestParse_EmptyInput(t *testing.T) {
 
 func TestEvaluate_WithParseError(t *testing.T) {
 	student := model.Student{UUID: "err-student"}
-	res := Evaluate(nil, student, nil, errors.New("underlying parse failure"))
+	res := Evaluate(nil, student, 10, nil, errors.New("underlying parse failure"))
 	if res.Status != model.StatusParseError {
 		t.Errorf("expected StatusParseError, got %v", res.Status)
 	}
@@ -175,6 +327,7 @@ func TestParse_RelativeBadgeURLAndFallbackAria(t *testing.T) {
 <body>
   <div class="text--center">
     <h1>Test User</h1>
+    <p>Member since 2026</p>
     <div class="profile-badges">
       <div class="profile-badge">
         <a href="/public_profiles/1111/badges/99999"></a>
@@ -186,13 +339,17 @@ func TestParse_RelativeBadgeURLAndFallbackAria(t *testing.T) {
 </body>
 </html>`
 	student := model.Student{UUID: "1111"}
-	res := ParseResult([]byte(html), student, nil)
+	data, err := Parse([]byte(html))
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	res := Evaluate(data, student, 10, nil, nil)
 
 	if res.Status != model.StatusInProgress {
-		t.Errorf("expected InProgress with 1 badge and nil config, got %v", res.Status)
+		t.Errorf("expected InProgress with 1 badge and goal 10, got %v", res.Status)
 	}
-	if res.BadgeCount != 1 {
-		t.Fatalf("expected 1 badge, got %d", res.BadgeCount)
+	if res.CountedBadges != 1 || res.TotalBadges != 1 {
+		t.Fatalf("expected 1 badge, got counted=%d, total=%d", res.CountedBadges, res.TotalBadges)
 	}
 	if res.Badges[0].URL != "https://www.skills.google/public_profiles/1111/badges/99999" {
 		t.Errorf("unexpected normalized URL: %s", res.Badges[0].URL)
@@ -202,51 +359,31 @@ func TestParse_RelativeBadgeURLAndFallbackAria(t *testing.T) {
 	}
 }
 
-func TestParse_ConfigFiltering(t *testing.T) {
+func TestParse_BadgeFilter(t *testing.T) {
 	html := loadFixture(t, "sample_profile.html")
 	student := model.Student{UUID: "be556f7b-ab4b-4be7-82fb-9be45202ddd7"}
 
-	// Restrict to only 1 specific badge
-	cfg := &config.Config{
-		Goal: 1,
-		RequiredBadges: []string{
-			"Explore Generative AI in Agent Platform",
-		},
+	data, err := Parse(html)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
 	}
 
-	res := ParseResult(html, student, cfg)
-	if res.BadgeCount != 1 {
-		t.Fatalf("expected 1 filtered badge, got %d", res.BadgeCount)
+	// Filter to only 1 badge title
+	filter := func(b model.BadgeRecord) bool {
+		return b.Title == "Explore Generative AI in Agent Platform"
+	}
+
+	res := Evaluate(data, student, 1, filter, nil)
+	if res.TotalBadges != 10 {
+		t.Errorf("expected TotalBadges 10, got %d", res.TotalBadges)
+	}
+	if res.CountedBadges != 1 {
+		t.Fatalf("expected 1 counted badge, got %d", res.CountedBadges)
 	}
 	if res.Badges[0].Title != "Explore Generative AI in Agent Platform" {
 		t.Errorf("unexpected badge title: %s", res.Badges[0].Title)
 	}
 	if res.Status != model.StatusComplete {
 		t.Errorf("expected StatusComplete with goal 1, got %v", res.Status)
-	}
-}
-
-func TestParseDate(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{"Nov  3, 2026 EST", "2026-11-03"},
-		{"Nov 15, 2026 EST", "2026-11-15"},
-		{"2026-10-12", "2026-10-12"},
-		{"unparseable-date", ""},
-	}
-
-	for _, tc := range tests {
-		got := parseDate(tc.input)
-		if tc.want == "" {
-			if !got.IsZero() {
-				t.Errorf("parseDate(%q) expected zero time, got %v", tc.input, got)
-			}
-		} else {
-			if got.Format("2006-01-02") != tc.want {
-				t.Errorf("parseDate(%q) = %s, want %s", tc.input, got.Format("2006-01-02"), tc.want)
-			}
-		}
 	}
 }

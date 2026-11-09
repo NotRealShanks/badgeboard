@@ -41,6 +41,38 @@ func TestStatus_StringAndJSON(t *testing.T) {
 	}
 }
 
+func TestEvaluateStatus(t *testing.T) {
+	tests := []struct {
+		name          string
+		countedBadges int
+		goal          int
+		totalBadges   int
+		isPrivate     bool
+		want          Status
+	}{
+		{"private profile", 0, 10, 0, true, StatusPrivateOrNotFound},
+		{"private profile even with badges", 5, 10, 5, true, StatusPrivateOrNotFound},
+		{"no badges on public profile", 0, 10, 0, false, StatusNoBadges},
+		{"badges count meets default goal", 10, 10, 10, false, StatusComplete},
+		{"badges count exceeds goal", 12, 10, 15, false, StatusComplete},
+		{"badges count meets custom goal 5", 5, 5, 5, false, StatusComplete},
+		{"badges count below goal", 4, 5, 4, false, StatusInProgress},
+		{"badges count below default goal", 9, 10, 9, false, StatusInProgress},
+		{"badges on profile but 0 meet filter", 0, 10, 3, false, StatusInProgress},
+		{"goal <= 0 defaults to 10", 10, 0, 10, false, StatusComplete},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := EvaluateStatus(tc.countedBadges, tc.goal, tc.totalBadges, tc.isPrivate)
+			if got != tc.want {
+				t.Errorf("EvaluateStatus(%d, %d, %d, %v) = %v, want %v",
+					tc.countedBadges, tc.goal, tc.totalBadges, tc.isPrivate, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestProfileResult_JSONRoundTrip(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	earned := now.Add(-24 * time.Hour)
@@ -68,6 +100,8 @@ func TestProfileResult_JSONRoundTrip(t *testing.T) {
 				ImageURL:  "https://cdn.qwiklabs.com/image.png",
 			},
 		},
+		TotalBadges:       1,
+		CountedBadges:     1,
 		BadgeCount:        1,
 		LastBadgeEarnedAt: &earned,
 		FetchedAt:         now,
@@ -89,6 +123,9 @@ func TestProfileResult_JSONRoundTrip(t *testing.T) {
 	}
 	if decoded.Status != StatusComplete {
 		t.Errorf("Status mismatch: got %v, want %v", decoded.Status, StatusComplete)
+	}
+	if decoded.TotalBadges != 1 || decoded.CountedBadges != 1 {
+		t.Errorf("Badges count mismatch: total=%d, counted=%d", decoded.TotalBadges, decoded.CountedBadges)
 	}
 	if len(decoded.Badges) != 1 || decoded.Badges[0].ID != "12345" {
 		t.Errorf("Badges mismatch: %+v", decoded.Badges)

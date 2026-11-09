@@ -17,7 +17,9 @@ dist/
 go.work
 
 # Badgeboard local cache and data
+.cache/
 .badgeboard_cache/
 data/results.json
 data/real_*.csv
 *.local.toml
+

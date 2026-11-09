@@ -168,18 +168,3 @@ func (c *Config) FilterEligibleBadges(badges []model.BadgeRecord) []model.BadgeR
 	return filtered
 }
 
-// EvaluateStatus determines the profile status given the count of eligible badges and target goal.
-func (c *Config) EvaluateStatus(eligibleBadgeCount int) model.Status {
-	goal := DefaultGoal
-	if c != nil && c.Goal > 0 {
-		goal = c.Goal
-	}
-
-	if eligibleBadgeCount >= goal {
-		return model.StatusComplete
-	}
-	if eligibleBadgeCount > 0 {
-		return model.StatusInProgress
-	}
-	return model.StatusNoBadges
-}

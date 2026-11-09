@@ -2,36 +2,68 @@ package parse
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+	_ "time/tzdata"
 
-	"github.com/NotRealShanks/badgeboard/internal/config"
 	"github.com/NotRealShanks/badgeboard/internal/model"
 	"github.com/PuerkitoBio/goquery"
 )
 
 var (
-	badgeURLPattern  = regexp.MustCompile(`(?i)(?:https?://[^/]+)?/public_profiles/[^/]+/badges/(\d+)`)
-	earnedPattern    = regexp.MustCompile(`(?i)Earned\s+([A-Za-z]{3}\s+\d{1,2},\s+\d{4}(?:\s+[A-Za-z0-9]+)?)`)
-	pointsPattern    = regexp.MustCompile(`(?i)(\d+)\s+points?`)
-	privateKeywords  = []string{"sign in", "not found", "404", "private", "bad gateway", "internal server error", "unauthorized", "forbidden"}
-	dateParseFormats = []string{
-		"Jan _2, 2006 MST",
-		"Jan 02, 2006 MST",
-		"Jan 2, 2006 MST",
-		"Jan _2, 2006",
-		"Jan 02, 2006",
-		"Jan 2, 2006",
-		time.RFC3339,
-		"2006-01-02",
+	badgeURLPattern = regexp.MustCompile(`(?i)(?:https?://[^/]+)?/public_profiles/[^/]+/badges/(\d+)`)
+	earnedPattern   = regexp.MustCompile(`(?i)Earned\s+([A-Za-z]{3}\s+\d{1,2},\s+\d{4})`)
+	pointsPattern   = regexp.MustCompile(`(?i)(\d+)\s+points?`)
+
+	// Server error markers that indicate HTTP or infrastructure failure rather than profile content
+	serverErrorKeywords = []string{
+		"500", "502", "503", "504",
+		"bad gateway", "internal server error", "service unavailable",
+		"nginx", "cloudflare", "error 5",
 	}
+
+	// Explicit private profile markers
+	privateKeywords = []string{
+		"this profile is private",
+		"private profile",
+		"sign in to view this profile",
+		"sign in to google skills",
+	}
+
+	// Markers indicating page pagination or unhandled load more controls
+	paginationSelectors = []string{
+		".pagination",
+		"ql-pagination",
+		"[rel='next']",
+		".load-more",
+		"a.next_page",
+		".next-page",
+	}
+	paginationKeywords = []string{
+		"load more",
+		"view more badges",
+		"next page",
+	}
+
+	nyLocation = func() *time.Location {
+		loc, err := time.LoadLocation("America/New_York")
+		if err != nil {
+			return time.FixedZone("EST", -5*3600)
+		}
+		return loc
+	}()
 )
 
+// ErrPaginationDetected is returned when pagination or "load more" controls are encountered.
+var ErrPaginationDetected = errors.New("profile pagination or 'load more' control detected; pagination parsing is unverified so aborting to avoid truncated badge count")
+
 // ProfileData holds the raw parsed components extracted from a public profile HTML page.
+// The parser does not know about goals or campaign windows; it extracts raw profile facts.
 type ProfileData struct {
 	DisplayName string
 	League      string
@@ -41,7 +73,10 @@ type ProfileData struct {
 }
 
 // Parse extracts profile data from raw HTML bytes without performing any I/O.
-// It detects whether the profile is private/inaccessible or a valid profile page.
+// It distinguishes between:
+// - Valid public profiles (with 0 or more badges)
+// - Private or inaccessible profiles
+// - Parse errors (malformed HTML, server error pages, missing markers, or unverified pagination)
 func Parse(html []byte) (*ProfileData, error) {
 	if len(bytes.TrimSpace(html)) == 0 {
 		return nil, fmt.Errorf("empty html payload")
@@ -54,35 +89,75 @@ func Parse(html []byte) (*ProfileData, error) {
 
 	titleText := strings.TrimSpace(doc.Find("title").Text())
 	lowerTitle := strings.ToLower(titleText)
+	bodyText := strings.ToLower(doc.Find("body").Text())
 
-	// Check title for error or sign-in signals
-	for _, kw := range privateKeywords {
+	// 1. Detect server-level or gateway error pages -> ParseError
+	for _, kw := range serverErrorKeywords {
 		if strings.Contains(lowerTitle, kw) {
+			return nil, fmt.Errorf("server error or gateway error markup detected (%s)", titleText)
+		}
+	}
+
+	// 2. Check for unverified pagination or load more controls -> ParseError
+	for _, sel := range paginationSelectors {
+		if doc.Find(sel).Length() > 0 {
+			return nil, ErrPaginationDetected
+		}
+	}
+	for _, kw := range paginationKeywords {
+		if strings.Contains(bodyText, kw) {
+			return nil, ErrPaginationDetected
+		}
+	}
+
+	// 3. Check for explicit private profile indicators
+	for _, kw := range privateKeywords {
+		if strings.Contains(bodyText, kw) || strings.Contains(lowerTitle, kw) {
 			return &ProfileData{IsPrivate: true}, nil
 		}
 	}
 
-	// Look for the main profile heading (h1)
+	// 4. Look for the main profile heading (h1)
 	h1 := doc.Find("h1").First()
 	h1Text := strings.TrimSpace(h1.Text())
 	lowerH1 := strings.ToLower(h1Text)
 
 	if h1Text == "" {
-		// Missing profile heading indicates private, redirected, or 404 page
-		return &ProfileData{IsPrivate: true}, nil
+		// Missing profile heading without private indicators is malformed profile markup
+		return nil, fmt.Errorf("missing profile h1 heading")
 	}
 
+	// Check if h1 text itself is a server error or private indicator
+	for _, kw := range serverErrorKeywords {
+		if strings.Contains(lowerH1, kw) {
+			return nil, fmt.Errorf("server error in h1: %s", h1Text)
+		}
+	}
 	for _, kw := range privateKeywords {
 		if strings.Contains(lowerH1, kw) {
 			return &ProfileData{IsPrivate: true}, nil
 		}
 	}
 
-	// Check for explicit private profile indicators in body text
-	bodyText := strings.ToLower(doc.Find("body").Text())
-	if strings.Contains(bodyText, "this profile is private") ||
-		strings.Contains(bodyText, "sign in to view this profile") {
-		return &ProfileData{IsPrivate: true}, nil
+	// 5. Check for positive evidence of a real public profile:
+	// h1 alone is not enough to confirm a public profile. There must be at least one
+	// additional marker present in the real sample:
+	// - "Member since" text
+	// - League block (.profile-league or league headline)
+	// - Points block
+	// - Avatar (.profile-avatar or ql-avatar)
+	// - Profile badges container (.profile-badges)
+	hasMemberSince := strings.Contains(bodyText, "member since")
+	hasLeague := doc.Find(".profile-league, h2.ql-headline-medium").Length() > 0
+	hasPoints := pointsPattern.MatchString(bodyText)
+	hasAvatar := doc.Find(".profile-avatar, ql-avatar").Length() > 0
+	hasBadgesContainer := doc.Find(".profile-badges").Length() > 0
+
+	hasPositiveProfileMarkers := hasMemberSince || hasLeague || hasPoints || hasAvatar || hasBadgesContainer
+
+	if !hasPositiveProfileMarkers {
+		// If zero badges and no positive profile markers, reject as ParseError (never report as NoBadges)
+		return nil, fmt.Errorf("missing positive profile markers (member since, league/points, avatar) to confirm public profile")
 	}
 
 	data := &ProfileData{
@@ -123,17 +198,14 @@ func Parse(html []byte) (*ProfileData, error) {
 			URL: normalizeBadgeURL(href),
 		}
 
-		// Image URL if present in child img
 		if img := s.Find("img").First(); img.Length() > 0 {
 			if src, exists := img.Attr("src"); exists {
 				badge.ImageURL = strings.TrimSpace(src)
 			}
 		}
 
-		// Traverse badge container or parent to find title and earned date
 		parent := s.Parent()
 		if parent.Length() > 0 {
-			// Find title: look for span with title class or sibling spans
 			parent.Find("span").Each(func(_ int, span *goquery.Selection) {
 				text := strings.TrimSpace(span.Text())
 				if text == "" {
@@ -141,13 +213,13 @@ func Parse(html []byte) (*ProfileData, error) {
 				}
 				if earnedMatch := earnedPattern.FindStringSubmatch(text); len(earnedMatch) > 1 {
 					badge.RawEarned = text
-					badge.EarnedAt = parseDate(earnedMatch[1])
+					badge.EarnedAt = ParseDate(earnedMatch[1])
 				} else if badge.Title == "" && !strings.HasPrefix(strings.ToLower(text), "earned") {
 					badge.Title = text
 				}
 			})
 
-			// Fallback title from ql-button or aria-label if not found
+			// Fallback title from ql-button aria attribute if not found
 			if badge.Title == "" {
 				if btn := parent.Find("ql-button").First(); btn.Length() > 0 {
 					aria, exists := btn.Attr("arialabel")
@@ -175,8 +247,10 @@ func Parse(html []byte) (*ProfileData, error) {
 	return data, nil
 }
 
-// Evaluate evaluates a parsed ProfileData against student metadata and campaign config.
-func Evaluate(data *ProfileData, student model.Student, cfg *config.Config, parseErr error) model.ProfileResult {
+// Evaluate composes a ProfileResult from parsed ProfileData, student info, campaign goal,
+// and an optional badge filter function (e.g. for required badges or date window).
+// The parser itself remains completely agnostic of the goal.
+func Evaluate(data *ProfileData, student model.Student, goal int, badgeFilter func(model.BadgeRecord) bool, parseErr error) model.ProfileResult {
 	now := time.Now().UTC()
 	result := model.ProfileResult{
 		Student:   student,
@@ -197,19 +271,22 @@ func Evaluate(data *ProfileData, student model.Student, cfg *config.Config, pars
 	result.DisplayName = data.DisplayName
 	result.League = data.League
 	result.Points = data.Points
+	result.TotalBadges = len(data.Badges)
 
-	// Use display name if student name is empty
 	if result.Student.Name == "" && data.DisplayName != "" {
 		result.Student.Name = data.DisplayName
 	}
 
-	// Filter eligible badges according to optional config window & required_badges
-	eligibleBadges := data.Badges
-	if cfg != nil {
-		eligibleBadges = cfg.FilterEligibleBadges(data.Badges)
+	// Apply optional badge filter
+	eligibleBadges := make([]model.BadgeRecord, 0, len(data.Badges))
+	for _, b := range data.Badges {
+		if badgeFilter == nil || badgeFilter(b) {
+			eligibleBadges = append(eligibleBadges, b)
+		}
 	}
 
 	result.Badges = eligibleBadges
+	result.CountedBadges = len(eligibleBadges)
 	result.BadgeCount = len(eligibleBadges)
 
 	// Determine latest badge earned date
@@ -224,28 +301,9 @@ func Evaluate(data *ProfileData, student model.Student, cfg *config.Config, pars
 	}
 	result.LastBadgeEarnedAt = latest
 
-	// Evaluate final status
-	if len(data.Badges) == 0 {
-		result.Status = model.StatusNoBadges
-	} else if cfg != nil {
-		result.Status = cfg.EvaluateStatus(len(eligibleBadges))
-	} else {
-		if len(eligibleBadges) >= config.DefaultGoal {
-			result.Status = model.StatusComplete
-		} else if len(eligibleBadges) > 0 {
-			result.Status = model.StatusInProgress
-		} else {
-			result.Status = model.StatusNoBadges
-		}
-	}
-
+	// Evaluate status using model.EvaluateStatus
+	result.Status = model.EvaluateStatus(result.CountedBadges, goal, result.TotalBadges, data.IsPrivate)
 	return result
-}
-
-// ParseResult is a convenience function that parses HTML bytes and evaluates the result.
-func ParseResult(html []byte, student model.Student, cfg *config.Config) model.ProfileResult {
-	data, err := Parse(html)
-	return Evaluate(data, student, cfg, err)
 }
 
 func normalizeBadgeURL(raw string) string {
@@ -263,13 +321,31 @@ func normalizeBadgeURL(raw string) string {
 	return "https://www.skills.google/" + raw
 }
 
-func parseDate(dateStr string) time.Time {
+// ParseDate parses the earned date as a calendar date in America/New_York timezone.
+// Handles strings like "Earned Nov  3, 2026 EST", "Nov  3, 2026", and single/double spaced days.
+func ParseDate(dateStr string) time.Time {
 	clean := strings.TrimSpace(dateStr)
-	// Replace internal multiple spaces (e.g. "Nov  3" -> "Nov 3") when trying formats with single space
-	for _, format := range dateParseFormats {
-		if t, err := time.Parse(format, clean); err == nil {
+	// Strip "Earned" prefix if present
+	clean = regexp.MustCompile(`(?i)^earned\s+`).ReplaceAllString(clean, "")
+	// Remove trailing time zone name if present (e.g. "EST", "EDT")
+	clean = regexp.MustCompile(`\s+[A-Za-z]{3,4}$`).ReplaceAllString(clean, "")
+
+	formats := []string{
+		"Jan _2, 2006",
+		"Jan 02, 2006",
+		"Jan 2, 2006",
+		"2006-01-02",
+	}
+
+	for _, format := range formats {
+		if t, err := time.ParseInLocation(format, clean, nyLocation); err == nil {
 			return t
 		}
 	}
 	return time.Time{}
+}
+
+// NYLocation returns the America/New_York timezone location used for calendar date parsing.
+func NYLocation() *time.Location {
+	return nyLocation
 }
