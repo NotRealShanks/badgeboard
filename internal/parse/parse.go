@@ -328,7 +328,6 @@ func Evaluate(data *ProfileData, student model.Student, goal int, badgeFilter fu
 
 	result.Badges = eligibleBadges
 	result.CountedBadges = len(eligibleBadges)
-	result.BadgeCount = len(eligibleBadges)
 
 	var latest *time.Time
 	for _, b := range eligibleBadges {

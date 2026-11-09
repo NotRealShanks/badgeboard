@@ -48,8 +48,8 @@ func TestPhase1Gate_RealSample(t *testing.T) {
 	if result.CountedBadges != 10 {
 		t.Fatalf("GATE FAILURE: expected exactly 10 counted badges, got %d", result.CountedBadges)
 	}
-	if result.BadgeCount != 10 {
-		t.Fatalf("GATE FAILURE: expected BadgeCount alias 10, got %d", result.BadgeCount)
+	if result.CountedBadges != 10 {
+		t.Fatalf("GATE FAILURE: expected CountedBadges 10, got %d", result.CountedBadges)
 	}
 
 	if len(result.Badges) != 10 {
@@ -57,11 +57,11 @@ func TestPhase1Gate_RealSample(t *testing.T) {
 	}
 
 	if result.DisplayName != "Sample Learner" {
-		t.Errorf("Sample Learner", "Sample Learner", result.DisplayName)
+		t.Errorf("expected display name %q, got %q", "Sample Learner", result.DisplayName)
 	}
 
 	if result.Student.Name != "Sample Learner" {
-		Sample Learner, got %q", "Sample Learner", result.Student.Name)
+		t.Errorf("expected Student.Name %q, got %q", "Sample Learner", result.Student.Name)
 	}
 
 	if result.League != "Silver League" {
@@ -162,7 +162,7 @@ func TestParse_ProvisionalFixtures(t *testing.T) {
 				t.Errorf("expected counted badges %d, got %d", tc.expectCounted, res.CountedBadges)
 			}
 			if tc.expectDisplay != "" && res.DisplayName != tc.expectDisplay {
-				t.Errorf("Sample Learner", tc.expectDisplay, res.DisplayName)
+				t.Errorf("expected display name %q, got %q", tc.expectDisplay, res.DisplayName)
 			}
 		})
 	}

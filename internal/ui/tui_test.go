@@ -70,7 +70,7 @@ func TestTUI_ProgressAndRecentActivity(t *testing.T) {
 func TestTUI_DoneMsgExits(t *testing.T) {
 	m := NewLiveModel(context.Background(), nil, nil, nil, 10, 1.0, true)
 	results := []model.ProfileResult{
-		{Sample Learner},
+		{Status: model.StatusComplete},
 	}
 
 	updated, cmd := m.Update(doneMsg{results: results, err: nil})

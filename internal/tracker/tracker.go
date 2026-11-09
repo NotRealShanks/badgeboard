@@ -260,3 +260,19 @@ func (t *Tracker) processStudent(ctx context.Context, student model.Student) mod
 
 	return res
 }
+
+// WritesToCache returns the count of cache entries written to disk during this tracker run.
+func (t *Tracker) WritesToCache() int {
+	if t.cache == nil {
+		return 0
+	}
+	return t.cache.WritesCount()
+}
+
+// CacheDir returns the directory path of the cache, if initialized.
+func (t *Tracker) CacheDir() string {
+	if t.cache == nil {
+		return ""
+	}
+	return t.cache.Dir()
+}

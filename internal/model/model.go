@@ -72,8 +72,8 @@ func EvaluateStatus(countedBadges int, goal int, totalBadges int, isPrivate bool
 
 // Student represents a participant loaded from a roster.
 type Student struct {
-	ProfileURL string `json:"profile_url"`
-	UUID       string `json:"uuid"`
+	ProfileURL string `json:"profile_url,omitempty"`
+	UUID       string `json:"uuid,omitempty"`
 	Name       string `json:"name,omitempty"`
 	Email      string `json:"email,omitempty"`
 	Team       string `json:"team,omitempty"`
@@ -100,7 +100,6 @@ type ProfileResult struct {
 	Badges            []BadgeRecord `json:"badges,omitempty"`
 	TotalBadges       int           `json:"total_badges"`
 	CountedBadges     int           `json:"counted_badges"`
-	BadgeCount        int           `json:"badge_count"` // Alias equal to CountedBadges
 	LastBadgeEarnedAt *time.Time    `json:"last_badge_earned_at,omitempty"`
 	Error             string        `json:"error,omitempty"`
 	FetchedAt         time.Time     `json:"fetched_at"`

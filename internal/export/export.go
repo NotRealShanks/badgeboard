@@ -227,18 +227,33 @@ func CSV(w io.Writer, results []model.ProfileResult, goal int, anonymize bool) e
 	writer := csv.NewWriter(w)
 	defer writer.Flush()
 
-	header := []string{
-		"Name",
-		"Profile URL",
-		"UUID",
-		"Status",
-		"Counted Badges",
-		"Total Badges",
-		"Goal",
-		"Last Badge Date",
-		"League",
-		"Points",
-		"Error",
+	var header []string
+	if anonymize {
+		header = []string{
+			"Name",
+			"Status",
+			"Counted Badges",
+			"Total Badges",
+			"Goal",
+			"Last Badge Date",
+			"League",
+			"Points",
+			"Error",
+		}
+	} else {
+		header = []string{
+			"Name",
+			"Profile URL",
+			"UUID",
+			"Status",
+			"Counted Badges",
+			"Total Badges",
+			"Goal",
+			"Last Badge Date",
+			"League",
+			"Points",
+			"Error",
+		}
 	}
 	if err := writer.Write(header); err != nil {
 		return fmt.Errorf("writing CSV header: %w", err)
@@ -259,18 +274,33 @@ func CSV(w io.Writer, results []model.ProfileResult, goal int, anonymize bool) e
 			lastDate = res.LastBadgeEarnedAt.Format("2006-01-02")
 		}
 
-		record := []string{
-			sanitizeCSVField(res.Student.Name),
-			sanitizeCSVField(res.Student.ProfileURL),
-			sanitizeCSVField(res.Student.UUID),
-			sanitizeCSVField(res.Status.String()),
-			sanitizeCSVField(strconv.Itoa(res.CountedBadges)),
-			sanitizeCSVField(strconv.Itoa(res.TotalBadges)),
-			sanitizeCSVField(strconv.Itoa(goal)),
-			sanitizeCSVField(lastDate),
-			sanitizeCSVField(res.League),
-			sanitizeCSVField(strconv.Itoa(res.Points)),
-			sanitizeCSVField(res.Error),
+		var record []string
+		if anonymize {
+			record = []string{
+				sanitizeCSVField(res.Student.Name),
+				sanitizeCSVField(res.Status.String()),
+				sanitizeCSVField(strconv.Itoa(res.CountedBadges)),
+				sanitizeCSVField(strconv.Itoa(res.TotalBadges)),
+				sanitizeCSVField(strconv.Itoa(goal)),
+				sanitizeCSVField(lastDate),
+				sanitizeCSVField(res.League),
+				sanitizeCSVField(strconv.Itoa(res.Points)),
+				sanitizeCSVField(res.Error),
+			}
+		} else {
+			record = []string{
+				sanitizeCSVField(res.Student.Name),
+				sanitizeCSVField(res.Student.ProfileURL),
+				sanitizeCSVField(res.Student.UUID),
+				sanitizeCSVField(res.Status.String()),
+				sanitizeCSVField(strconv.Itoa(res.CountedBadges)),
+				sanitizeCSVField(strconv.Itoa(res.TotalBadges)),
+				sanitizeCSVField(strconv.Itoa(goal)),
+				sanitizeCSVField(lastDate),
+				sanitizeCSVField(res.League),
+				sanitizeCSVField(strconv.Itoa(res.Points)),
+				sanitizeCSVField(res.Error),
+			}
 		}
 
 		if err := writer.Write(record); err != nil {

@@ -102,7 +102,6 @@ func TestProfileResult_JSONRoundTrip(t *testing.T) {
 		},
 		TotalBadges:       1,
 		CountedBadges:     1,
-		BadgeCount:        1,
 		LastBadgeEarnedAt: &earned,
 		FetchedAt:         now,
 		FromCache:         false,

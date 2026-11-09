@@ -29,7 +29,6 @@ func sampleResults() []model.ProfileResult {
 			Status:            model.StatusComplete,
 			CountedBadges:     10,
 			TotalBadges:       10,
-			BadgeCount:        10,
 			Points:            300,
 			League:            "Silver League",
 			LastBadgeEarnedAt: &now,
@@ -44,7 +43,6 @@ func sampleResults() []model.ProfileResult {
 			Status:        model.StatusInProgress,
 			CountedBadges: 4,
 			TotalBadges:   4,
-			BadgeCount:    4,
 		},
 		{
 			Student: model.Student{
@@ -203,18 +201,31 @@ func TestCSVExport_Anonymized(t *testing.T) {
 		t.Fatalf("reading exported CSV failed: %v", err)
 	}
 
+	header := records[0]
+	if len(header) != 9 {
+		t.Fatalf("expected 9 columns in anonymized CSV header, got %d: %v", len(header), header)
+	}
+	for _, col := range header {
+		if col == "Profile URL" || col == "UUID" {
+			t.Errorf("found forbidden column %q in anonymized CSV header", col)
+		}
+	}
+
 	aliceRow := records[1]
+	if len(aliceRow) != 9 {
+		t.Fatalf("expected 9 columns in anonymized CSV row, got %d", len(aliceRow))
+	}
 	if strings.Contains(aliceRow[0], "Alice Johnson") {
 		t.Errorf("name leaked in anonymized CSV: %s", aliceRow[0])
 	}
 	if !strings.Contains(aliceRow[0], "A. J.") {
 		t.Errorf("expected initials in anonymized CSV, got: %s", aliceRow[0])
 	}
-	if aliceRow[1] != "" {
-		t.Errorf("profile URL must be empty in anonymized CSV, got %q", aliceRow[1])
+	if aliceRow[1] != string(model.StatusComplete) {
+		t.Errorf("expected status 'complete' at col 1 in omitted-URL anonymized CSV, got %q", aliceRow[1])
 	}
-	if aliceRow[2] != "" {
-		t.Errorf("UUID must be empty in anonymized CSV, got %q", aliceRow[2])
+	if aliceRow[2] != "10" {
+		t.Errorf("expected counted badges '10' at col 2 in omitted-URL anonymized CSV, got %q", aliceRow[2])
 	}
 }
 
@@ -275,7 +286,7 @@ func TestAnonymize_RealSampleAudit(t *testing.T) {
 
 	// Assert preconditions
 	if res.DisplayName != h1DisplayName {
-		t.Fatalf("Sample Learner", h1DisplayName, res.DisplayName)
+		t.Fatalf("expected display name %q, got %q", h1DisplayName, res.DisplayName)
 	}
 	if len(res.Badges) != 10 {
 		t.Fatalf("expected 10 badges, got %d", len(res.Badges))
@@ -316,6 +327,32 @@ func TestAnonymize_RealSampleAudit(t *testing.T) {
 		if strings.Contains(csvOut, s) {
 			t.Errorf("Anonymized CSV audit failed: found forbidden string %q in output", s)
 		}
+	}
+
+	// 3. Assert header omission and no empty columns in CSV
+	csvReader := csv.NewReader(strings.NewReader(csvOut))
+	csvRecords, err := csvReader.ReadAll()
+	if err != nil {
+		t.Fatalf("reading anonymized CSV failed: %v", err)
+	}
+	header := csvRecords[0]
+	if len(header) != 9 {
+		t.Errorf("expected 9 columns in anonymized CSV header, got %d: %v", len(header), header)
+	}
+	for _, col := range header {
+		if col == "Profile URL" || col == "UUID" {
+			t.Errorf("found forbidden column %q in anonymized CSV header", col)
+		}
+	}
+	for rIdx, row := range csvRecords {
+		if len(row) != 9 {
+			t.Errorf("row %d has %d columns, expected 9", rIdx, len(row))
+		}
+	}
+
+	// 4. Assert profile_url and uuid are omitted in anonymized JSON
+	if strings.Contains(jsonOut, `"profile_url"`) || strings.Contains(jsonOut, `"uuid"`) {
+		t.Errorf("expected profile_url and uuid fields to be omitted in anonymized JSON, got:\n%s", jsonOut)
 	}
 }
 

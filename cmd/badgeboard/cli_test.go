@@ -59,8 +59,8 @@ func TestCLI_Demo(t *testing.T) {
 	if payload.Summary.CompleteCount != 4 {
 		t.Errorf("expected 4 complete students, got %d", payload.Summary.CompleteCount)
 	}
-	if payload.Summary.InProgressCount != 6 {
-		t.Errorf("expected 6 in-progress students, got %d", payload.Summary.InProgressCount)
+	if payload.Summary.InProgressCount != 5 {
+		t.Errorf("expected 5 in-progress students, got %d", payload.Summary.InProgressCount)
 	}
 	if payload.Summary.NoBadgesCount != 2 {
 		t.Errorf("expected 2 no-badges students, got %d", payload.Summary.NoBadgesCount)
@@ -73,7 +73,7 @@ func TestCLI_Demo(t *testing.T) {
 func TestCLI_ExitCodes(t *testing.T) {
 	// 1. Success exit code (0) for complete, in progress, no badges, and private/not found
 	allEvaluated := []model.ProfileResult{
-		{Sample Learner},
+		{Status: model.StatusComplete},
 		{Status: model.StatusInProgress},
 		{Status: model.StatusNoBadges},
 		{Status: model.StatusPrivateOrNotFound},
@@ -84,7 +84,7 @@ func TestCLI_ExitCodes(t *testing.T) {
 
 	// 2. Partial / Unreachable exit code (3) for network error, rate limit, parse error
 	withNetworkError := []model.ProfileResult{
-		{Sample Learner},
+		{Status: model.StatusComplete},
 		{Status: model.StatusNetworkError},
 	}
 	if code := determineExitCode(withNetworkError); code != ExitPartial {

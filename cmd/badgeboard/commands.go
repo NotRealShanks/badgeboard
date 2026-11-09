@@ -54,6 +54,7 @@ var (
 	flagNoColor    bool
 	flagRunFormat    string
 	flagExportFormat string
+	flagDemoFormat   string
 	flagOut          string
 	flagRaw        bool
 )
@@ -266,6 +267,10 @@ func newRunCmd() *cobra.Command {
 			tableOutput := ui.RenderFinalTable(results, tableOpts)
 			fmt.Print(tableOutput)
 
+			if !flagNoCache && trk.WritesToCache() > 0 {
+				fmt.Fprintf(os.Stderr, "Cached profile data is stored in %s. Use --no-cache or badgeboard cache clear for sensitive runs.\n", trk.CacheDir())
+			}
+
 			exitCode := determineExitCode(results)
 			if exitCode != ExitSuccess {
 				os.Exit(exitCode)
@@ -354,7 +359,11 @@ func newCheckCmd() *cobra.Command {
 				fmt.Println("  (No skill badges found on profile)")
 			} else {
 				for i, b := range res.Badges {
-					fmt.Printf("  %2d. %-45s  (Earned: %s)\n", i+1, b.Title, b.RawEarned)
+					earnedStr := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(b.RawEarned), "Earned"))
+					if earnedStr == "" && !b.EarnedAt.IsZero() {
+						earnedStr = b.EarnedAt.Format("Jan 2, 2006")
+					}
+					fmt.Printf("  %2d. %-45s  (Earned: %s)\n", i+1, b.Title, earnedStr)
 				}
 			}
 
@@ -407,10 +416,20 @@ func newExportCmd() *cobra.Command {
 				outWriter = f
 			}
 
+			var exportErr error
 			if strings.EqualFold(flagExportFormat, "csv") {
-				return export.CSV(outWriter, results, cfg.Goal, flagAnonymize)
+				exportErr = export.CSV(outWriter, results, cfg.Goal, flagAnonymize)
+			} else {
+				exportErr = export.JSONWithBadRows(outWriter, results, rst.BadRows, cfg.Goal, flagAnonymize)
 			}
-			return export.JSONWithBadRows(outWriter, results, rst.BadRows, cfg.Goal, flagAnonymize)
+			if exportErr != nil {
+				return exportErr
+			}
+
+			if !flagNoCache && trk.WritesToCache() > 0 {
+				fmt.Fprintf(os.Stderr, "Cached profile data is stored in %s. Use --no-cache or badgeboard cache clear for sensitive runs.\n", trk.CacheDir())
+			}
+			return nil
 		},
 	}
 
@@ -460,45 +479,84 @@ func newDemoCmd() *cobra.Command {
 				goal = 10
 			}
 
-			outPath := flagOut
-			if outPath == "" {
-				outPath = "data/results.json"
-			}
-
 			// Generate deterministic synthetic results using fixed seed (seed: 42)
 			results := generateDeterministicDemoData(goal)
 
-			if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil && filepath.Dir(outPath) != "." {
-				return fmt.Errorf("creating output directory: %w", err)
+			format := strings.ToLower(strings.TrimSpace(flagDemoFormat))
+			if format == "" {
+				format = "text"
 			}
 
-			f, err := os.Create(outPath)
-			if err != nil {
-				return fmt.Errorf("creating demo output file %q: %w", outPath, err)
-			}
-			defer f.Close()
+			switch format {
+			case "json":
+				outWriter := os.Stdout
+				if flagOut != "" && flagOut != "-" {
+					if err := os.MkdirAll(filepath.Dir(flagOut), 0755); err != nil && filepath.Dir(flagOut) != "." {
+						return fmt.Errorf("creating output directory: %w", err)
+					}
+					f, err := os.Create(flagOut)
+					if err != nil {
+						return fmt.Errorf("creating demo output file %q: %w", flagOut, err)
+					}
+					defer f.Close()
+					outWriter = f
+				}
+				return export.JSONWithBadRows(outWriter, results, nil, goal, flagAnonymize)
 
-			if err := export.JSONWithBadRows(f, results, nil, goal, flagAnonymize); err != nil {
-				return fmt.Errorf("writing demo data: %w", err)
-			}
+			case "csv":
+				outWriter := os.Stdout
+				if flagOut != "" && flagOut != "-" {
+					if err := os.MkdirAll(filepath.Dir(flagOut), 0755); err != nil && filepath.Dir(flagOut) != "." {
+						return fmt.Errorf("creating output directory: %w", err)
+					}
+					f, err := os.Create(flagOut)
+					if err != nil {
+						return fmt.Errorf("creating demo output file %q: %w", flagOut, err)
+					}
+					defer f.Close()
+					outWriter = f
+				}
+				return export.CSV(outWriter, results, goal, flagAnonymize)
 
-			noColor := shouldDisableColor()
-			fmt.Printf("Generated %d synthetic demo records -> %s\n\n", len(results), outPath)
-			tableOpts := ui.TableOptions{
-				Goal:      goal,
-				NoColor:   noColor,
-				Width:     80,
-				CacheHits: 8,
-				BadRows:   0,
-				Duration:  1800 * time.Millisecond,
-			}
-			fmt.Print(ui.RenderFinalTable(results, tableOpts))
+			case "text":
+				outPath := flagOut
+				if outPath == "" {
+					outPath = "data/results.json"
+				}
+				if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil && filepath.Dir(outPath) != "." {
+					return fmt.Errorf("creating output directory: %w", err)
+				}
+				f, err := os.Create(outPath)
+				if err != nil {
+					return fmt.Errorf("creating demo output file %q: %w", outPath, err)
+				}
+				defer f.Close()
 
-			return nil
+				if err := export.JSONWithBadRows(f, results, nil, goal, flagAnonymize); err != nil {
+					return fmt.Errorf("writing demo data: %w", err)
+				}
+
+				noColor := shouldDisableColor()
+				fmt.Printf("Generated %d synthetic demo records -> %s\n\n", len(results), outPath)
+				tableOpts := ui.TableOptions{
+					Goal:      goal,
+					NoColor:   noColor,
+					Width:     80,
+					CacheHits: 8,
+					BadRows:   0,
+					Duration:  1800 * time.Millisecond,
+				}
+				fmt.Print(ui.RenderFinalTable(results, tableOpts))
+				return nil
+
+			default:
+				return fmt.Errorf("unsupported demo format %q (choose text, json, or csv)", flagDemoFormat)
+			}
 		},
 	}
 
-	demoCmd.Flags().StringVarP(&flagOut, "out", "o", "data/results.json", "Output path for demo results JSON")
+	demoCmd.Flags().StringVar(&flagDemoFormat, "format", "text", "Output format (text, json, or csv)")
+	demoCmd.Flags().StringVarP(&flagOut, "out", "o", "", "Destination file path")
 	return demoCmd
 }
 
@@ -528,31 +586,33 @@ func generateDeterministicDemoData(goal int) []model.ProfileResult {
 		"Implement Cloud Security Fundamentals on Google Cloud",
 	}
 
+	// 15 clearly fictional names with realistic spread:
+	// 4 complete, 5 in progress, 2 no badges, 2 private, 1 network error, 1 rate limited
 	students := []struct {
 		name   string
 		uuid   string
 		status model.Status
 		count  int
 	}{
-		{"Ada Lovelace", "11111111-aaaa-bbbb-cccc-000000000001", model.StatusComplete, 10},
-		{"Alan Turing", "11111111-aaaa-bbbb-cccc-000000000002", model.StatusComplete, 10},
-		{"Grace Hopper", "11111111-aaaa-bbbb-cccc-000000000003", model.StatusComplete, 10},
-		{"Katherine Johnson", "11111111-aaaa-bbbb-cccc-000000000004", model.StatusComplete, 10},
-		{"Margaret Hamilton", "11111111-aaaa-bbbb-cccc-000000000005", model.StatusInProgress, 8},
-		{"Claude Shannon", "11111111-aaaa-bbbb-cccc-000000000006", model.StatusInProgress, 6},
-		{"John von Neumann", "11111111-aaaa-bbbb-cccc-000000000007", model.StatusInProgress, 5},
-		{"Dorothy Vaughan", "11111111-aaaa-bbbb-cccc-000000000008", model.StatusInProgress, 4},
-		{"Mary Jackson", "11111111-aaaa-bbbb-cccc-000000000009", model.StatusInProgress, 3},
-		{"Tim Berners-Lee", "11111111-aaaa-bbbb-cccc-000000000010", model.StatusInProgress, 1},
-		{"Linus Torvalds", "11111111-aaaa-bbbb-cccc-000000000011", model.StatusNoBadges, 0},
-		{"Ken Thompson", "11111111-aaaa-bbbb-cccc-000000000012", model.StatusNoBadges, 0},
-		{"Dennis Ritchie", "11111111-aaaa-bbbb-cccc-000000000013", model.StatusPrivateOrNotFound, 0},
-		{"Barbara Liskov", "11111111-aaaa-bbbb-cccc-000000000014", model.StatusPrivateOrNotFound, 0},
-		{"Donald Knuth", "11111111-aaaa-bbbb-cccc-000000000015", model.StatusNetworkError, 0},
+		{"Orion Sterling", "11111111-aaaa-bbbb-cccc-000000000001", model.StatusComplete, 10},
+		{"Lyra Vance", "11111111-aaaa-bbbb-cccc-000000000002", model.StatusComplete, 10},
+		{"Corin Calder", "11111111-aaaa-bbbb-cccc-000000000003", model.StatusComplete, 10},
+		{"Zephyr Drake", "11111111-aaaa-bbbb-cccc-000000000004", model.StatusComplete, 10},
+		{"Astra Thorne", "11111111-aaaa-bbbb-cccc-000000000005", model.StatusInProgress, 8},
+		{"Talon Mercer", "11111111-aaaa-bbbb-cccc-000000000006", model.StatusInProgress, 6},
+		{"Vesper Rowe", "11111111-aaaa-bbbb-cccc-000000000007", model.StatusInProgress, 5},
+		{"Cassian Vane", "11111111-aaaa-bbbb-cccc-000000000008", model.StatusInProgress, 3},
+		{"Sonya Vale", "11111111-aaaa-bbbb-cccc-000000000009", model.StatusInProgress, 1},
+		{"Jaxen Cross", "11111111-aaaa-bbbb-cccc-000000000010", model.StatusNoBadges, 0},
+		{"Rylan Solis", "11111111-aaaa-bbbb-cccc-000000000011", model.StatusNoBadges, 0},
+		{"Kaelen Frost", "11111111-aaaa-bbbb-cccc-000000000012", model.StatusPrivateOrNotFound, 0},
+		{"Thalia Voss", "11111111-aaaa-bbbb-cccc-000000000013", model.StatusPrivateOrNotFound, 0},
+		{"Brecken Hale", "11111111-aaaa-bbbb-cccc-000000000014", model.StatusNetworkError, 0},
+		{"Silas Novak", "11111111-aaaa-bbbb-cccc-000000000015", model.StatusRateLimited, 0},
 	}
 
 	results := make([]model.ProfileResult, len(students))
-	baseTime := time.Date(2026, 10, 15, 10, 0, 0, 0, time.UTC)
+	now := time.Now().UTC()
 
 	for i, s := range students {
 		url := fmt.Sprintf("https://www.skills.google/public_profiles/%s", s.uuid)
@@ -569,13 +629,17 @@ func generateDeterministicDemoData(goal int) []model.ProfileResult {
 			TotalBadges:   s.count,
 			Points:        s.count * 30,
 			League:        "Gold League",
-			FetchedAt:     time.Now().UTC(),
+			FetchedAt:     now,
 		}
 
 		if s.count > 0 {
 			badges := make([]model.BadgeRecord, s.count)
 			for b := 0; b < s.count; b++ {
-				earnedDate := baseTime.Add(time.Duration(b*3+rng.Intn(2)) * 24 * time.Hour)
+				daysAgo := 25 - (b*2 + (i % 3))
+				if daysAgo < 1 {
+					daysAgo = 1
+				}
+				earnedDate := now.Add(-time.Duration(daysAgo)*24*time.Hour - time.Duration((i*5+b*7+rng.Intn(3))%24)*time.Hour)
 				badges[b] = model.BadgeRecord{
 					ID:        fmt.Sprintf("badge-%d", b+1),
 					Title:     badgeTitles[b%len(badgeTitles)],
@@ -593,6 +657,8 @@ func generateDeterministicDemoData(goal int) []model.ProfileResult {
 			res.Error = "profile is set to private or return 404"
 		} else if s.status == model.StatusNetworkError {
 			res.Error = "network timeout dialing skills.google"
+		} else if s.status == model.StatusRateLimited {
+			res.Error = "HTTP 429: rate limit exceeded"
 		}
 
 		results[i] = res

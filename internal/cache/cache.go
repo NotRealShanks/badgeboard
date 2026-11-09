@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/NotRealShanks/badgeboard/internal/model"
@@ -42,6 +43,7 @@ type Cache struct {
 	ttl         time.Duration
 	negativeTTL time.Duration
 	now         func() time.Time
+	writes      atomic.Int64
 }
 
 // Option allows customizing Cache configuration.
@@ -178,7 +180,13 @@ func (c *Cache) Set(uuid string, entry *Entry) error {
 		}
 	}
 
+	c.writes.Add(1)
 	return nil
+}
+
+// WritesCount returns the number of cache entries written during this cache's lifetime.
+func (c *Cache) WritesCount() int {
+	return int(c.writes.Load())
 }
 
 // Dir returns the cache directory path.

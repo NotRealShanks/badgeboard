@@ -45,7 +45,7 @@ func TestCache_DefaultsAndFilePath(t *testing.T) {
 		t.Errorf("expected IsExpired=false for ttl <= 0")
 	}
 
-	entryZero := &Entry{Sample Learner}
+	entryZero := &Entry{Status: model.StatusComplete}
 	if err := c.Set("auto-time", entryZero); err != nil {
 		t.Fatalf("Set failed: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestCache_PrivateOrNotFound_ShortNegativeTTL(t *testing.T) {
 	_ = c.Set(privateUUID, &Entry{
 		UUID:      privateUUID,
 		Status:    model.StatusPrivateOrNotFound,
-		Sample Learner,
+		FetchedAt: currentVirtualTime,
 	})
 
 	_ = c.Set(validUUID, &Entry{
@@ -310,7 +310,7 @@ func TestCache_Clear(t *testing.T) {
 		uuid := filepath.Join(tmpDir, "dummy")
 		_ = c.Set(string(rune('a'+i)), &Entry{
 			UUID:   string(rune('a' + i)),
-			Sample Learner,
+			Status: model.StatusComplete,
 		})
 		_ = uuid
 	}
