@@ -208,7 +208,7 @@ func New(opts ...Option) *Fetcher {
 				}
 
 				lowerPath := strings.ToLower(req.URL.Path)
-				if strings.Contains(lowerPath, "sign_in") || strings.Contains(lowerPath, "login") {
+				if strings.Contains(lowerPath, "sign_in") || strings.Contains(lowerPath, "login") || lowerPath == "/" || !strings.Contains(lowerPath, "public_profiles") {
 					return ErrNotFoundOrPrivate
 				}
 				return nil
@@ -275,15 +275,17 @@ func (f *Fetcher) Fetch(ctx context.Context, targetURL string) ([]byte, error) {
 			continue
 		}
 
-		// Inspect final landing URL
-		finalPath := strings.ToLower(resp.Request.URL.Path)
-		if strings.Contains(finalPath, "sign_in") || strings.Contains(finalPath, "login") {
-			_ = resp.Body.Close()
-			return nil, ErrNotFoundOrPrivate
-		}
-
 		switch {
 		case resp.StatusCode == http.StatusOK:
+			// Inspect final landing URL: if redirected to sign-in, login, or away from a public profile, map to ErrNotFoundOrPrivate
+			finalPath := strings.ToLower(resp.Request.URL.Path)
+			origPath := strings.ToLower(parsedURL.Path)
+			if strings.Contains(finalPath, "sign_in") || strings.Contains(finalPath, "login") ||
+				(strings.Contains(origPath, "public_profiles") && (!strings.Contains(finalPath, "public_profiles") || finalPath == "/")) {
+				_ = resp.Body.Close()
+				return nil, ErrNotFoundOrPrivate
+			}
+
 			// Wrap response body in LimitReader (2 MB limit)
 			limitReader := io.LimitReader(resp.Body, f.maxResponseBytes+1)
 			body, readErr := io.ReadAll(limitReader)

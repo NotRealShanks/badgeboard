@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -375,3 +376,140 @@ func TestTracker_TrackSingle(t *testing.T) {
 		t.Errorf("expected 10 badges, got %d", res.CountedBadges)
 	}
 }
+
+func TestTracker_InterruptedRunResumption(t *testing.T) {
+	sampleHTML := loadRealSampleHTML(t)
+	var networkRequests atomic.Int32
+	var s0Fetched atomic.Bool
+
+	cacheDir := t.TempDir()
+	c, err := cache.New(cacheDir, 6*time.Hour)
+	if err != nil {
+		t.Fatalf("failed creating disk cache: %v", err)
+	}
+
+	cfg := &config.Config{
+		Goal: 10,
+		RateLimit: config.RateLimitConfig{
+			RPS:         100.0,
+			Concurrency: 1, // Single worker guarantees deterministic serial execution
+		},
+	}
+
+	students := []model.Student{
+		{
+			Name:       "Student 0",
+			UUID:       "be556f7b-ab4b-4be7-82fb-9be45202ddd7",
+			ProfileURL: "https://www.skills.google/public_profiles/be556f7b-ab4b-4be7-82fb-9be45202ddd7",
+		},
+		{
+			Name:       "Student 1",
+			UUID:       "8f0d00c3-7674-4042-ba15-d26a3fae84f9",
+			ProfileURL: "https://www.skills.google/public_profiles/8f0d00c3-7674-4042-ba15-d26a3fae84f9",
+		},
+		{
+			Name:       "Student 2",
+			UUID:       "2fafe410-5b6c-463b-9a1d-61dbfb43e9ac",
+			ProfileURL: "https://www.skills.google/public_profiles/2fafe410-5b6c-463b-9a1d-61dbfb43e9ac",
+		},
+	}
+	rost := &roster.Roster{Students: students}
+
+	ctx1, cancel1 := context.WithCancel(context.Background())
+
+	client1 := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			networkRequests.Add(1)
+			if strings.Contains(req.URL.Path, "be556f7b-ab4b-4be7-82fb-9be45202ddd7") {
+				s0Fetched.Store(true)
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewReader(sampleHTML)),
+				Header:     make(http.Header),
+				Request:    req,
+			}, nil
+		}),
+	}
+	fetcher1 := fetch.New(
+		fetch.WithHTTPClient(client1),
+		fetch.WithSleeper(func(_ context.Context, _ time.Duration) error { return nil }),
+	)
+
+	trk1, err := New(cfg, WithFetcher(fetcher1), WithCache(c))
+	if err != nil {
+		t.Fatalf("failed creating tracker 1: %v", err)
+	}
+
+	// Cancel context as soon as Student 0 finishes
+	_, err1 := trk1.Track(ctx1, rost, func(cur, tot int, r model.ProfileResult) {
+		if r.Student.UUID == students[0].UUID {
+			cancel1()
+		}
+	})
+	if err1 == nil {
+		t.Errorf("expected context cancellation error on interrupted run, got nil")
+	}
+
+	if !s0Fetched.Load() {
+		t.Fatalf("expected student 0 to have been fetched before cancellation")
+	}
+
+	// Verify Student 0 was persisted to disk cache
+	cachedS0, found, err := c.Get(students[0].UUID)
+	if err != nil || !found || cachedS0 == nil {
+		t.Fatalf("expected student 0 to be present in disk cache after interruption: found=%v, err=%v", found, err)
+	}
+
+	// Reset network counter to verify second run behavior
+	initialReqs := networkRequests.Load()
+
+	// Second run: fresh tracker with the SAME disk cache and no cancellation
+	client2 := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if strings.Contains(req.URL.Path, students[0].UUID) {
+				t.Errorf("FATAL: student 0 re-fetched from network instead of disk cache!")
+			}
+			networkRequests.Add(1)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewReader(sampleHTML)),
+				Header:     make(http.Header),
+				Request:    req,
+			}, nil
+		}),
+	}
+	fetcher2 := fetch.New(
+		fetch.WithHTTPClient(client2),
+		fetch.WithSleeper(func(_ context.Context, _ time.Duration) error { return nil }),
+	)
+
+	trk2, err := New(cfg, WithFetcher(fetcher2), WithCache(c))
+	if err != nil {
+		t.Fatalf("failed creating tracker 2: %v", err)
+	}
+
+	results2, err2 := trk2.Track(context.Background(), rost, nil)
+	if err2 != nil {
+		t.Fatalf("resumed run failed: %v", err2)
+	}
+
+	if len(results2) != 3 {
+		t.Fatalf("expected 3 results on resumed run, got %d", len(results2))
+	}
+
+	// Student 0 MUST be from cache
+	if !results2[0].FromCache {
+		t.Errorf("expected student 0 FromCache=true on resumed run")
+	}
+	if results2[0].Status != model.StatusComplete {
+		t.Errorf("expected student 0 StatusComplete, got %v", results2[0].Status)
+	}
+
+	// Total additional network requests should only be for remaining students (students 1 & 2)
+	newReqs := networkRequests.Load() - initialReqs
+	if newReqs > 2 {
+		t.Errorf("expected at most 2 new network requests on resumption, got %d", newReqs)
+	}
+}
+

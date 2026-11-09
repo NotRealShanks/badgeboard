@@ -106,7 +106,15 @@ func AnonymizeResult(r model.ProfileResult) model.ProfileResult {
 		sourceName = r.DisplayName
 	}
 
-	anonName := AnonymizeName(sourceName, r.Student.UUID)
+	var anonName string
+	if strings.HasPrefix(sourceName, "Profile (") && strings.HasSuffix(sourceName, "…)") {
+		anonName = sourceName
+	} else if sourceName == "" {
+		anonName = model.FallbackProfileLabel(r.Student.UUID)
+	} else {
+		anonName = AnonymizeName(sourceName, r.Student.UUID)
+	}
+
 	copyRes.Student.Name = anonName
 	copyRes.Student.ProfileURL = ""
 	copyRes.Student.UUID = ""

@@ -125,11 +125,16 @@ func (t *Tracker) Track(ctx context.Context, r *roster.Roster, onProgress Progre
 				// If canceled, record partial context error and skip further dispatch
 				if ctx.Err() != nil {
 					canceled.Store(true)
+					fallbackName := model.FallbackProfileLabel(tsk.student.UUID)
 					results[tsk.index] = model.ProfileResult{
-						Student:   tsk.student,
-						Status:    model.StatusNetworkError,
-						Error:     ctx.Err().Error(),
-						FetchedAt: time.Now().UTC(),
+						Student:     tsk.student,
+						DisplayName: fallbackName,
+						Status:      model.StatusNetworkError,
+						Error:       ctx.Err().Error(),
+						FetchedAt:   time.Now().UTC(),
+					}
+					if results[tsk.index].Student.Name == "" {
+						results[tsk.index].Student.Name = fallbackName
 					}
 					continue
 				}
@@ -163,12 +168,19 @@ func (t *Tracker) processStudent(ctx context.Context, student model.Student) mod
 	if !t.refresh && t.cache != nil && student.UUID != "" {
 		if cached, hit, _ := t.cache.Get(student.UUID); hit && cached != nil {
 			if cached.Status == model.StatusPrivateOrNotFound {
-				return model.ProfileResult{
+				res := model.ProfileResult{
 					Student:   student,
 					Status:    model.StatusPrivateOrNotFound,
 					FetchedAt: cached.FetchedAt,
 					FromCache: true,
 				}
+				if res.DisplayName == "" {
+					res.DisplayName = model.FallbackProfileLabel(student.UUID)
+				}
+				if res.Student.Name == "" {
+					res.Student.Name = res.DisplayName
+				}
+				return res
 			}
 
 			if len(cached.HTML) > 0 {
@@ -207,6 +219,12 @@ func (t *Tracker) processStudent(ctx context.Context, student model.Student) mod
 			res.Status = model.StatusNetworkError
 		default:
 			res.Status = model.StatusNetworkError
+		}
+		if res.DisplayName == "" {
+			res.DisplayName = model.FallbackProfileLabel(student.UUID)
+		}
+		if res.Student.Name == "" {
+			res.Student.Name = res.DisplayName
 		}
 		return res
 	}

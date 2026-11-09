@@ -51,8 +51,9 @@ var (
 	flagAnonymize  bool
 	flagVerbose    bool
 	flagNoColor    bool
-	flagFormat     string
-	flagOut        string
+	flagRunFormat    string
+	flagExportFormat string
+	flagOut          string
 	flagRaw        bool
 )
 
@@ -158,7 +159,16 @@ func newRunCmd() *cobra.Command {
 
 			rst, err := roster.LoadFile(rosterPath)
 			if err != nil {
+				if errors.Is(err, roster.ErrEmptyRoster) {
+					fmt.Fprintf(os.Stderr, "Error: roster file %q is completely empty.\n", rosterPath)
+					os.Exit(ExitUsage)
+				}
 				return fmt.Errorf("loading roster %q: %w", rosterPath, err)
+			}
+
+			if len(rst.Students) == 0 {
+				fmt.Fprintln(os.Stdout, "Roster contains zero student records.")
+				return nil
 			}
 
 			trk, err := buildTracker(cfg, flagRefresh)
@@ -175,9 +185,9 @@ func newRunCmd() *cobra.Command {
 			var results []model.ProfileResult
 			var cacheHits int
 
-			if isTerminal() && flagFormat == "" {
+			if isTerminal() && flagRunFormat == "" {
 				// Interactive Bubble Tea live progress
-				liveModel := ui.NewLiveModel(ctx, stop, trk, rst, cfg.Goal, noColor)
+				liveModel := ui.NewLiveModel(ctx, stop, trk, rst, cfg.Goal, cfg.RateLimit.RPS, noColor)
 				p := tea.NewProgram(liveModel, tea.WithOutput(os.Stderr))
 				liveModel.StartTracking(p)
 
@@ -189,22 +199,40 @@ func newRunCmd() *cobra.Command {
 				cacheHits = liveModel.CacheHits()
 			} else {
 				// Non-TTY / scripted / CI output
-				var trackErr error
-				results, trackErr = trk.Track(ctx, rst, nil)
-				if trackErr != nil && len(results) == 0 {
-					return fmt.Errorf("tracking error: %w", trackErr)
+				if len(rst.Students) > 100 {
+					estDur := time.Duration(float64(len(rst.Students))/cfg.RateLimit.RPS) * time.Second
+					fmt.Fprintf(os.Stderr, "Tracking %d profiles (estimated duration: ~%s at %.1f req/s)...\n",
+						len(rst.Students), estDur.Round(time.Second), cfg.RateLimit.RPS)
 				}
-				for _, r := range results {
-					if r.FromCache {
+
+				var trackErr error
+				results, trackErr = trk.Track(ctx, rst, func(current, total int, res model.ProfileResult) {
+					if res.FromCache {
 						cacheHits++
 					}
+					if flagRunFormat == "" && (current == 1 || current%10 == 0 || current == total) {
+						elapsed := time.Since(startTime)
+						rate := float64(current) / elapsed.Seconds()
+						remaining := total - current
+						effectiveRPS := rate
+						if effectiveRPS <= 0 {
+							effectiveRPS = cfg.RateLimit.RPS
+						}
+						etaDur := time.Duration(float64(remaining)/effectiveRPS) * time.Second
+						pct := float64(current) / float64(total) * 100.0
+						fmt.Fprintf(os.Stderr, "[%d/%d] %.1f%% | Rate: %.1f req/s | ETA: %s | Cache Hits: %d\n",
+							current, total, pct, rate, etaDur.Round(time.Second), cacheHits)
+					}
+				})
+				if trackErr != nil && len(results) == 0 {
+					return fmt.Errorf("tracking error: %w", trackErr)
 				}
 			}
 
 			// Format output if requested (JSON or CSV)
-			if strings.EqualFold(flagFormat, "json") {
+			if strings.EqualFold(flagRunFormat, "json") {
 				return export.JSONWithBadRows(os.Stdout, results, rst.BadRows, cfg.Goal, flagAnonymize)
-			} else if strings.EqualFold(flagFormat, "csv") {
+			} else if strings.EqualFold(flagRunFormat, "csv") {
 				return export.CSV(os.Stdout, results, cfg.Goal, flagAnonymize)
 			}
 
@@ -229,7 +257,7 @@ func newRunCmd() *cobra.Command {
 		},
 	}
 
-	runCmd.Flags().StringVar(&flagFormat, "format", "", "Output format for stdout (json or csv)")
+	runCmd.Flags().StringVar(&flagRunFormat, "format", "", "Output format for stdout (json or csv)")
 	return runCmd
 }
 
@@ -361,14 +389,14 @@ func newExportCmd() *cobra.Command {
 				outWriter = f
 			}
 
-			if strings.EqualFold(flagFormat, "csv") {
+			if strings.EqualFold(flagExportFormat, "csv") {
 				return export.CSV(outWriter, results, cfg.Goal, flagAnonymize)
 			}
 			return export.JSONWithBadRows(outWriter, results, rst.BadRows, cfg.Goal, flagAnonymize)
 		},
 	}
 
-	exportCmd.Flags().StringVar(&flagFormat, "format", "json", "Output format (json or csv)")
+	exportCmd.Flags().StringVar(&flagExportFormat, "format", "json", "Output format (json or csv)")
 	exportCmd.Flags().StringVarP(&flagOut, "out", "o", "", "Destination file path (defaults to stdout)")
 	return exportCmd
 }

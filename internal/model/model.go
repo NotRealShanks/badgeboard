@@ -2,6 +2,8 @@ package model
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 )
 
@@ -104,3 +106,17 @@ type ProfileResult struct {
 	FetchedAt         time.Time     `json:"fetched_at"`
 	FromCache         bool          `json:"from_cache"`
 }
+
+// FallbackProfileLabel creates an unambiguous fallback label of the form "Profile (be55…)"
+// built from the first 4 characters of the UUID.
+func FallbackProfileLabel(uuid string) string {
+	clean := strings.TrimSpace(uuid)
+	prefix := "????"
+	if len(clean) >= 4 {
+		prefix = clean[:4]
+	} else if clean != "" {
+		prefix = clean
+	}
+	return fmt.Sprintf("Profile (%s…)", prefix)
+}
+

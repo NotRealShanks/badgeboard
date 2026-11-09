@@ -22,6 +22,8 @@ go.work
 # Local caches
 .cache/
 .badgeboard_cache/
+scratch/
+*.scratch
 
 # Local data & rosters
 data/

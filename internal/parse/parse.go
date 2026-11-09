@@ -172,7 +172,11 @@ func Parse(html []byte) (*ProfileData, error) {
 	hasPositiveProfileMarkers := hasMemberSince || hasPoints || hasLeague || hasBadgesContainer
 
 	if !hasPositiveProfileMarkers {
-		// Zero badges and missing profile markers must resolve to ParseError, never NoBadges
+		// When an account is private, upstream redirects to the root landing page ("Google Skills")
+		if lowerTitle == "google skills" || strings.HasPrefix(lowerTitle, "google cloud skills boost") || lowerTitle == "home" {
+			return &ProfileData{IsPrivate: true}, nil
+		}
+		// Zero badges and missing profile markers on broken/unknown markup must resolve to ParseError, never NoBadges
 		return nil, fmt.Errorf("missing positive profile markers (member since, points, league) to confirm public profile")
 	}
 
@@ -280,11 +284,23 @@ func Evaluate(data *ProfileData, student model.Student, goal int, badgeFilter fu
 	if parseErr != nil {
 		result.Status = model.StatusParseError
 		result.Error = parseErr.Error()
+		if result.DisplayName == "" {
+			result.DisplayName = model.FallbackProfileLabel(student.UUID)
+		}
+		if result.Student.Name == "" {
+			result.Student.Name = result.DisplayName
+		}
 		return result
 	}
 
 	if data == nil || data.IsPrivate {
 		result.Status = model.StatusPrivateOrNotFound
+		if result.DisplayName == "" {
+			result.DisplayName = model.FallbackProfileLabel(student.UUID)
+		}
+		if result.Student.Name == "" {
+			result.Student.Name = result.DisplayName
+		}
 		return result
 	}
 
@@ -295,6 +311,12 @@ func Evaluate(data *ProfileData, student model.Student, goal int, badgeFilter fu
 
 	if result.Student.Name == "" && data.DisplayName != "" {
 		result.Student.Name = data.DisplayName
+	}
+	if result.DisplayName == "" {
+		result.DisplayName = model.FallbackProfileLabel(student.UUID)
+	}
+	if result.Student.Name == "" {
+		result.Student.Name = result.DisplayName
 	}
 
 	eligibleBadges := make([]model.BadgeRecord, 0, len(data.Badges))

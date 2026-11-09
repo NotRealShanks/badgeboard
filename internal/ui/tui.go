@@ -33,6 +33,7 @@ type LiveModel struct {
 	current      int
 	cacheHits    int
 	goal         int
+	rps          float64
 	noColor      bool
 	width        int
 	startTime    time.Time
@@ -44,13 +45,16 @@ type LiveModel struct {
 }
 
 // NewLiveModel initializes the Bubble Tea model for tracker progress.
-func NewLiveModel(ctx context.Context, cancel context.CancelFunc, trk *tracker.Tracker, rst *roster.Roster, goal int, noColor bool) *LiveModel {
+func NewLiveModel(ctx context.Context, cancel context.CancelFunc, trk *tracker.Tracker, rst *roster.Roster, goal int, rps float64, noColor bool) *LiveModel {
 	total := 0
 	if rst != nil {
 		total = len(rst.Students)
 	}
 	if goal <= 0 {
 		goal = 10
+	}
+	if rps <= 0 {
+		rps = 1.0
 	}
 
 	return &LiveModel{
@@ -60,6 +64,7 @@ func NewLiveModel(ctx context.Context, cancel context.CancelFunc, trk *tracker.T
 		rst:       rst,
 		total:     total,
 		goal:      goal,
+		rps:       rps,
 		noColor:   noColor,
 		width:     80,
 		startTime: time.Now(),
@@ -170,8 +175,23 @@ func (m *LiveModel) View() string {
 	}
 	b.WriteString(barStr + "\n")
 
-	statsStr := fmt.Sprintf("Rate: %.1f req/s  |  Cache Hits: %d  |  Elapsed: %s",
-		rate, m.cacheHits, elapsed.Round(time.Second).String())
+	remaining := m.total - m.current
+	if remaining < 0 {
+		remaining = 0
+	}
+	effectiveRPS := rate
+	if effectiveRPS <= 0 && m.rps > 0 {
+		effectiveRPS = m.rps
+	}
+	etaStr := "calculating..."
+	if effectiveRPS > 0 {
+		etaSec := float64(remaining) / effectiveRPS
+		etaDur := time.Duration(etaSec) * time.Second
+		etaStr = etaDur.Round(time.Second).String()
+	}
+
+	statsStr := fmt.Sprintf("Rate: %.1f req/s  |  ETA: %s  |  Cache Hits: %d  |  Elapsed: %s",
+		rate, etaStr, m.cacheHits, elapsed.Round(time.Second).String())
 	if !m.noColor {
 		statsStr = mutedStyle.Render(statsStr)
 	}
@@ -223,3 +243,4 @@ func (m *LiveModel) Elapsed() time.Duration {
 func (m *LiveModel) WasCanceled() bool {
 	return m.canceled
 }
+

@@ -155,3 +155,4 @@ func TestTable_Golden_Narrow80(t *testing.T) {
 	rendered := RenderFinalTable(results, opts)
 	compareOrUpdateGolden(t, "narrow_80.golden", rendered)
 }
+

@@ -220,7 +220,7 @@ func RenderFinalTable(results []model.ProfileResult, opts TableOptions) string {
 			name = r.DisplayName
 		}
 		if name == "" {
-			name = "Anonymous"
+			name = model.FallbackProfileLabel(r.Student.UUID)
 		}
 		if len(name) > nameWidth {
 			name = name[:nameWidth-1] + "…"
@@ -253,7 +253,10 @@ func RenderFinalTable(results []model.ProfileResult, opts TableOptions) string {
 		for _, r := range unavailable {
 			name := r.Student.Name
 			if name == "" {
-				name = r.Student.ProfileURL
+				name = r.DisplayName
+			}
+			if name == "" {
+				name = model.FallbackProfileLabel(r.Student.UUID)
 			}
 			if len(name) > nameWidth {
 				name = name[:nameWidth-1] + "…"
@@ -322,3 +325,4 @@ func RenderFinalTable(results []model.ProfileResult, opts TableOptions) string {
 
 	return b.String()
 }
+

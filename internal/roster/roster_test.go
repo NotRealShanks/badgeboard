@@ -197,3 +197,143 @@ Student Two,https://www.skills.google/public_profiles/be556f7b-ab4b-4be7-82fb-9b
 	}
 }
 
+func TestLoad_SingleColumnCRLF(t *testing.T) {
+	csvData := "Google Skills Profile URL\r\n" +
+		"https://www.skills.google/public_profiles/be556f7b-ab4b-4be7-82fb-9be45202ddd7\r\n" +
+		"https://www.skills.google/public_profiles/8f0d00c3-7674-4042-ba15-d26a3fae84f9\r\n"
+
+	rst, err := Load(strings.NewReader(csvData))
+	if err != nil {
+		t.Fatalf("unexpected error loading single column CRLF: %v", err)
+	}
+
+	if len(rst.Students) != 2 {
+		t.Fatalf("expected 2 students, got %d", len(rst.Students))
+	}
+
+	for _, s := range rst.Students {
+		if strings.ContainsAny(s.ProfileURL, "\r\n\t ") {
+			t.Errorf("ProfileURL contains whitespace or CR/LF: %q", s.ProfileURL)
+		}
+		if strings.ContainsAny(s.UUID, "\r\n\t ") {
+			t.Errorf("UUID contains whitespace or CR/LF: %q", s.UUID)
+		}
+	}
+}
+
+func TestLoad_SingleColumnCRLF_NoTrailingNewline(t *testing.T) {
+	csvData := "Google Skills Profile URL\r\n" +
+		"https://www.skills.google/public_profiles/be556f7b-ab4b-4be7-82fb-9be45202ddd7\r\n" +
+		"https://www.skills.google/public_profiles/8f0d00c3-7674-4042-ba15-d26a3fae84f9"
+
+	rst, err := Load(strings.NewReader(csvData))
+	if err != nil {
+		t.Fatalf("unexpected error loading CRLF with no trailing newline: %v", err)
+	}
+
+	if len(rst.Students) != 2 {
+		t.Fatalf("expected 2 students, got %d", len(rst.Students))
+	}
+	if rst.Students[1].UUID != "8f0d00c3-7674-4042-ba15-d26a3fae84f9" {
+		t.Errorf("expected UUID 8f0d00c3-7674-4042-ba15-d26a3fae84f9, got %q", rst.Students[1].UUID)
+	}
+}
+
+func TestLoad_HeaderOnly(t *testing.T) {
+	csvData := "Google Skills Profile URL\r\n"
+	rst, err := Load(strings.NewReader(csvData))
+	if err != nil {
+		t.Fatalf("expected nil error for header-only CSV, got: %v", err)
+	}
+	if len(rst.Students) != 0 {
+		t.Errorf("expected 0 students, got %d", len(rst.Students))
+	}
+}
+
+func TestLoad_CompletelyEmptyFile(t *testing.T) {
+	_, err := Load(strings.NewReader(""))
+	if err == nil {
+		t.Fatalf("expected error for empty file, got nil")
+	}
+	if err != ErrEmptyRoster {
+		t.Errorf("expected ErrEmptyRoster, got %v", err)
+	}
+}
+
+func TestLoad_OrganizerSample_WithAndWithoutInfoColumn(t *testing.T) {
+	path := filepath.Join("..", "..", "testdata", "organizer_sample.csv")
+	rstWithInfo, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("failed loading organizer sample: %v", err)
+	}
+
+	// Create single column version without [INFO]
+	var singleColLines []string
+	singleColLines = append(singleColLines, "Google Skills Profile URL")
+	for _, s := range rstWithInfo.Students {
+		singleColLines = append(singleColLines, s.ProfileURL)
+	}
+	singleColCSV := strings.Join(singleColLines, "\r\n") + "\r\n"
+
+	rstSingleCol, err := Load(strings.NewReader(singleColCSV))
+	if err != nil {
+		t.Fatalf("failed loading single column version: %v", err)
+	}
+
+	if len(rstWithInfo.Students) != len(rstSingleCol.Students) {
+		t.Fatalf("student count mismatch: with info=%d, single col=%d",
+			len(rstWithInfo.Students), len(rstSingleCol.Students))
+	}
+
+	for i := range rstWithInfo.Students {
+		s1 := rstWithInfo.Students[i]
+		s2 := rstSingleCol.Students[i]
+		if s1.UUID != s2.UUID || s1.ProfileURL != s2.ProfileURL || s1.Name != s2.Name {
+			t.Errorf("student mismatch at index %d:\nwith info: %+v\nsingle col: %+v", i, s1, s2)
+		}
+	}
+}
+
+func TestLoad_URLColumnNotFirst(t *testing.T) {
+	csvData := "Notes,Age,Google Skills Profile URL,Role\r\n" +
+		"Candidate 1,22,https://www.skills.google/public_profiles/be556f7b-ab4b-4be7-82fb-9be45202ddd7,Engineer\r\n" +
+		"Candidate 2,24,https://www.skills.google/public_profiles/8f0d00c3-7674-4042-ba15-d26a3fae84f9,Designer\r\n"
+
+	rst, err := Load(strings.NewReader(csvData))
+	if err != nil {
+		t.Fatalf("unexpected error loading CSV with URL not first: %v", err)
+	}
+
+	if len(rst.Students) != 2 {
+		t.Fatalf("expected 2 students, got %d", len(rst.Students))
+	}
+	if rst.Students[0].UUID != "be556f7b-ab4b-4be7-82fb-9be45202ddd7" {
+		t.Errorf("student 0 UUID mismatch: %q", rst.Students[0].UUID)
+	}
+	if rst.Students[1].UUID != "8f0d00c3-7674-4042-ba15-d26a3fae84f9" {
+		t.Errorf("student 1 UUID mismatch: %q", rst.Students[1].UUID)
+	}
+}
+
+func TestNormalizeURL_WhitespaceAndCarriageReturn(t *testing.T) {
+	raw := "\r\n\t https://www.skills.google/public_profiles/be556f7b-ab4b-4be7-82fb-9be45202ddd7 \t\r\n"
+	normURL, uuid, err := NormalizeURL(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if strings.ContainsAny(normURL, "\r\n\t ") {
+		t.Errorf("normURL contains whitespace or CR/LF: %q", normURL)
+	}
+	if strings.ContainsAny(uuid, "\r\n\t ") {
+		t.Errorf("uuid contains whitespace or CR/LF: %q", uuid)
+	}
+	if normURL != "https://www.skills.google/public_profiles/be556f7b-ab4b-4be7-82fb-9be45202ddd7" {
+		t.Errorf("expected canonical URL, got %q", normURL)
+	}
+	if uuid != "be556f7b-ab4b-4be7-82fb-9be45202ddd7" {
+		t.Errorf("expected canonical UUID, got %q", uuid)
+	}
+}
+
+
