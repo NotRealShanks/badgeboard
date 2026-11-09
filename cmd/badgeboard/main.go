@@ -1,12 +1,13 @@
 package main
 
 import (
-	"fmt"
 	"os"
 )
 
 func main() {
-	fmt.Println("badgeboard CLI scaffold")
-	os.Exit(0)
+	rootCmd := newRootCmd()
+	if err := rootCmd.Execute(); err != nil {
+		// Exit code 2 for usage errors, 1 for fatal runtime errors
+		os.Exit(ExitFatal)
+	}
 }
-

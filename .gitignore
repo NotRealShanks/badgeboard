@@ -23,10 +23,15 @@ go.work
 .cache/
 .badgeboard_cache/
 
-# Local data & rosters (never commit real rosters or generated campaign data)
+# Local data & rosters
 data/
-roster*.csv
-!testdata/sample_roster.csv
+
+# Ignore all CSV and JSON everywhere
+*.csv
+*.json
+# Allow only testdata fixtures
+!testdata/*.csv
+!testdata/*.json
 
 # Local configs
 *.local.toml

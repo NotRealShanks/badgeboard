@@ -11,6 +11,7 @@ import (
 
 	"github.com/NotRealShanks/badgeboard/internal/model"
 	"github.com/NotRealShanks/badgeboard/internal/parse"
+	"github.com/NotRealShanks/badgeboard/internal/roster"
 )
 
 func sampleResults() []model.ProfileResult {
@@ -370,3 +371,96 @@ func TestCSVExport_FormulaInjectionNeutralized(t *testing.T) {
 		t.Errorf("expected neutralized Error, got %q", row[10])
 	}
 }
+
+func TestAnonymize_FailurePathAndBadRowsAudit(t *testing.T) {
+	failureUUID1 := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	failureURL1 := "https://www.skills.google/public_profiles/" + failureUUID1
+	name1 := "Fail Student One"
+	email1 := "fail1@example.com"
+
+	failureUUID2 := "12345678-1234-1234-1234-123456789abc"
+	failureURL2 := "https://www.skills.google/public_profiles/" + failureUUID2
+	name2 := "Fail Student Two"
+	email2 := "fail2@example.com"
+
+	results := []model.ProfileResult{
+		{
+			Student: model.Student{
+				Name:       name1,
+				Email:      email1,
+				UUID:       failureUUID1,
+				ProfileURL: failureURL1,
+			},
+			Status: model.StatusPrivateOrNotFound,
+			Error:  "profile not found or private for Fail Student One (aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee) at https://www.skills.google/public_profiles/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+		},
+		{
+			Student: model.Student{
+				Name:       name2,
+				Email:      email2,
+				UUID:       failureUUID2,
+				ProfileURL: failureURL2,
+			},
+			Status: model.StatusRateLimited,
+			Error:  "rate limited when contacting https://www.skills.google/public_profiles/12345678-1234-1234-1234-123456789abc for student Fail Student Two <fail2@example.com>",
+		},
+		{
+			Student: model.Student{
+				Name:       "Fail Student Three",
+				Email:      "fail3@example.com",
+				UUID:       "99999999-8888-7777-6666-555555555555",
+				ProfileURL: "https://www.skills.google/public_profiles/99999999-8888-7777-6666-555555555555",
+			},
+			Status: model.StatusNetworkError,
+			Error:  "network timeout dialing https://www.skills.google/public_profiles/99999999-8888-7777-6666-555555555555",
+		},
+	}
+
+	badRows := []roster.BadRowReport{
+		{
+			RowNumber: 42,
+			RawValue:  "John Leaky,https://www.skills.google/public_profiles/badbad00-1111-2222-3333-444444444444,leaky@example.com",
+			Reason:    "malformed UUID on https://www.skills.google/public_profiles/badbad00-1111-2222-3333-444444444444",
+		},
+	}
+
+	// 1. JSON anonymized test
+	var jsonBuf bytes.Buffer
+	if err := JSONWithBadRows(&jsonBuf, results, badRows, 10, true); err != nil {
+		t.Fatalf("JSONWithBadRows failed: %v", err)
+	}
+	jsonOut := jsonBuf.String()
+
+	forbidden := []string{
+		failureUUID1, failureURL1, name1, email1,
+		failureUUID2, failureURL2, name2, email2,
+		"99999999-8888-7777-6666-555555555555",
+		"John Leaky", "leaky@example.com", "badbad00-1111-2222-3333-444444444444",
+	}
+
+	for _, str := range forbidden {
+		if strings.Contains(jsonOut, str) {
+			t.Errorf("Anonymized JSON audit failed: found forbidden string %q in JSON output", str)
+		}
+	}
+
+	// 2. CSV anonymized test
+	var csvBuf bytes.Buffer
+	if err := CSV(&csvBuf, results, 10, true); err != nil {
+		t.Fatalf("CSV failed: %v", err)
+	}
+	csvOut := csvBuf.String()
+
+	csvForbidden := []string{
+		failureUUID1, failureURL1, name1, email1,
+		failureUUID2, failureURL2, name2, email2,
+		"99999999-8888-7777-6666-555555555555",
+	}
+
+	for _, str := range csvForbidden {
+		if strings.Contains(csvOut, str) {
+			t.Errorf("Anonymized CSV audit failed: found forbidden string %q in CSV output", str)
+		}
+	}
+}
+

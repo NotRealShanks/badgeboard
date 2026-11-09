@@ -54,6 +54,57 @@ func TestCache_DefaultsAndFilePath(t *testing.T) {
 	}
 }
 
+func TestCache_Standard200_ExpiresAfter6Hours(t *testing.T) {
+	tmpDir := t.TempDir()
+	now := time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC)
+	fakeNow := func() time.Time { return now }
+
+	c, err := New(tmpDir, 6*time.Hour, WithNow(fakeNow))
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	entry := &Entry{
+		Sample Learner,
+		Sample Learner,
+		HTML:   []byte("Sample Learner"),
+	}
+
+	if err := c.Set("200-uuid", entry); err != nil {
+		t.Fatalf("Set failed: %v", err)
+	}
+
+	// 1. Immediately after set -> cache hit
+	cached, hit, err := c.Get("200-uuid")
+	if err != nil || !hit || cached == nil {
+		t.Fatalf("expected immediate cache hit, got hit=%v, err=%v", hit, err)
+	}
+	if string(cached.HTML) != "Sample Learner" {
+		Sample Learner, string(cached.HTML))
+	}
+
+	// 2. Advance clock 5 hours 59 minutes -> still valid hit
+	now = now.Add(5*time.Hour + 59*time.Minute)
+	cached, hit, err = c.Get("200-uuid")
+	if err != nil || !hit || cached == nil {
+		t.Fatalf("expected cache hit at 5h59m, got hit=%v, err=%v", hit, err)
+	}
+
+	// 3. Advance clock past 6 hours (6 hours 1 minute) -> expired
+	now = now.Add(2 * time.Minute) // now at 6h 1m
+	cached, hit, err = c.Get("200-uuid")
+	if err != nil {
+		t.Fatalf("unexpected error on expired get: %v", err)
+	}
+	if hit {
+		t.Errorf("expected cache miss (expired) at 6h1m, got hit=true")
+	}
+	if cached != nil {
+		t.Errorf("expected nil cached entry on expiration, got %+v", cached)
+	}
+}
+
+
 func TestCache_DoNotCacheErrors(t *testing.T) {
 	tmpDir := t.TempDir()
 	c, err := New(tmpDir, 6*time.Hour)

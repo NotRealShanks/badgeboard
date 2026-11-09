@@ -72,10 +72,13 @@ This document records the core architectural decisions, design choices, and trad
 
 ---
 
-## 10. Privacy & Anonymized Public Deployment
-- **Context**: Roster files contain student names and emails. Campaign dashboards are often deployed publicly via GitHub Pages.
-- **Decision**: The CLI provides `--anonymize` for public output, and real roster files as well as `data/` artifacts are strictly gitignored. Only synthetic data is used for tests and public demos.
-- **Rationale**: Prevents accidental leakage of personally identifiable information (PII) to public repositories.
+## 10. Privacy & Pseudonymized Public Deployment
+- **Context**: Roster files contain student names, emails, and profile URLs. Campaign dashboards are often deployed publicly via GitHub Pages.
+- **Decision**: The CLI provides `--anonymize` for public output. Real roster files as well as `data/` artifacts are strictly gitignored.
+- **Pseudonymization Scheme**: The `--anonymize` output is technically **pseudonymized** rather than fully anonymized: names are converted to initials with a 4-character UUID suffix (e.g. `A. J. (ddd7)`). This allows participants to track their own progress on public boards without publishing full names or emails.
+- **Why Badge URLs are Dropped**: Upstream Google Skills badge links embed the full profile UUID (`/public_profiles/<uuid>/badges/<badge_id>`). Retaining badge URLs would enable anyone to extract the full UUID and reconstruct the participant's public profile URL.
+- **Why Error Strings are Scrubbed**: Network timeouts, 404s, and rate limit messages frequently incorporate the target request URL, UUID, or student email into error text. These strings are systematically scrubbed via regex.
+- **Why Bad Rows are Excluded**: Bad row diagnostics record raw input CSV lines (often containing pasted names, emails, or malformed URLs). In anonymized mode, the bad-rows collection is omitted from public exports to guarantee zero data leakage.
 
 ---
 

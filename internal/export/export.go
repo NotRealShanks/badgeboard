@@ -7,12 +7,36 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/NotRealShanks/badgeboard/internal/model"
+	"github.com/NotRealShanks/badgeboard/internal/roster"
 )
+
+var (
+	uuidRegex  = regexp.MustCompile(`(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
+	urlRegex   = regexp.MustCompile(`(?i)https?://[^\s"'<>]+`)
+	emailRegex = regexp.MustCompile(`(?i)[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`)
+)
+
+// ScrubText removes URLs, UUIDs, emails, and names from text (such as error messages).
+func ScrubText(text string, names ...string) string {
+	if text == "" {
+		return ""
+	}
+	s := urlRegex.ReplaceAllString(text, "[redacted url]")
+	s = uuidRegex.ReplaceAllString(s, "[redacted uuid]")
+	s = emailRegex.ReplaceAllString(s, "[redacted email]")
+	for _, n := range names {
+		if trimmed := strings.TrimSpace(n); trimmed != "" {
+			s = strings.ReplaceAll(s, trimmed, "[redacted name]")
+		}
+	}
+	return s
+}
 
 // Summary provides high-level aggregation metrics for exports and dashboards.
 type Summary struct {
@@ -24,6 +48,7 @@ type Summary struct {
 	NoBadgesCount     int       `json:"no_badges_count"`
 	PrivateOrNotFound int       `json:"private_or_not_found_count"`
 	ErrorCount        int       `json:"error_count"`
+	BadRowCount       int       `json:"bad_row_count,omitempty"`
 	Anonymized        bool      `json:"anonymized"`
 }
 
@@ -31,6 +56,7 @@ type Summary struct {
 type ExportPayload struct {
 	Summary Summary               `json:"summary"`
 	Results []model.ProfileResult `json:"results"`
+	BadRows []roster.BadRowReport `json:"bad_rows,omitempty"`
 }
 
 // ComputeSummary calculates aggregated campaign metrics.
@@ -71,6 +97,7 @@ func ComputeSummary(results []model.ProfileResult, goal int, anonymized bool) Su
 // - Email is scrubbed
 // - Profile URL and full UUID are scrubbed
 // - Per-badge URLs are dropped
+// - Error messages are scrubbed of URLs, UUIDs, emails, and names
 func AnonymizeResult(r model.ProfileResult) model.ProfileResult {
 	copyRes := r
 
@@ -98,6 +125,9 @@ func AnonymizeResult(r model.ProfileResult) model.ProfileResult {
 			copyRes.Badges[i].URL = ""
 		}
 	}
+
+	// Scrub any error strings containing URLs, UUIDs, emails, or names
+	copyRes.Error = ScrubText(r.Error, r.Student.Name, r.DisplayName)
 
 	return copyRes
 }
@@ -151,6 +181,12 @@ func sanitizeCSVField(s string) string {
 
 // JSON exports results and summary as formatted JSON to w.
 func JSON(w io.Writer, results []model.ProfileResult, goal int, anonymize bool) error {
+	return JSONWithBadRows(w, results, nil, goal, anonymize)
+}
+
+// JSONWithBadRows exports results, summary, and bad-rows report as formatted JSON to w.
+// In anonymized mode, the bad-rows report is dropped to prevent data leakage of raw input URLs/names.
+func JSONWithBadRows(w io.Writer, results []model.ProfileResult, badRows []roster.BadRowReport, goal int, anonymize bool) error {
 	exportResults := results
 	if anonymize {
 		exportResults = make([]model.ProfileResult, len(results))
@@ -159,9 +195,18 @@ func JSON(w io.Writer, results []model.ProfileResult, goal int, anonymize bool) 
 		}
 	}
 
+	summary := ComputeSummary(exportResults, goal, anonymize)
+	summary.BadRowCount = len(badRows)
+
+	var exportBadRows []roster.BadRowReport
+	if !anonymize && len(badRows) > 0 {
+		exportBadRows = badRows
+	}
+
 	payload := ExportPayload{
-		Summary: ComputeSummary(exportResults, goal, anonymize),
+		Summary: summary,
 		Results: exportResults,
+		BadRows: exportBadRows,
 	}
 
 	enc := json.NewEncoder(w)

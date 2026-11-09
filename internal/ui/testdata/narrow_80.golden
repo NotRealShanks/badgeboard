@@ -1,0 +1,13 @@
+STUDENT             PROGRESS      COUNT  STATUS          LAST EARNED
+────────────────────────────────────────────────────────────────────────────────
+Alice Johnson       [██████████]  10/10  [✓] Complete    2026-11-03
+Bob Smith           [███████░░░]   7/10  [>] In Progress  2026-11-03
+Charlie Zero        [░░░░░░░░░░]   0/10  [-] No Badges   -         
+
+UNAVAILABLE / UNREACHABLE PROFILES
+────────────────────────────────────────────────────────────────────────────────
+Eve Timeout         [!] Network Err  network timeout connecting to upstream
+David Private       [?] Private/404  profile private or not found
+────────────────────────────────────────────────────────────────────────────────
+Total: 5  |  Complete: 1 (20.0%)  |  In Progress: 1  |  No Badges: 1  |  Unavailable: 2
+Cache Hits: 1  |  Bad CSV Rows: 0  |  Duration: 1.5s
