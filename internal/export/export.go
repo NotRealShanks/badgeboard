@@ -96,9 +96,12 @@ func ComputeSummary(results []model.ProfileResult, goal int, anonymized bool) Su
 // - Display name is replaced with the same anonymized pseudonym
 // - Email is scrubbed
 // - Profile URL and full UUID are scrubbed
-// - Per-badge URLs are dropped
 // - Error messages are scrubbed of URLs, UUIDs, emails, and names
-func AnonymizeResult(r model.ProfileResult) model.ProfileResult {
+// - In Public mode (default without includeBadges): badge list, per-badge dates, badge titles,
+//   badge URLs, league, points, and full-precision timestamps are omitted.
+// - In Full Anonymized mode (with includeBadges): badge titles and dates are retained, but URLs are dropped.
+func AnonymizeResult(r model.ProfileResult, includeBadges ...bool) model.ProfileResult {
+	withBadges := len(includeBadges) > 0 && includeBadges[0]
 	copyRes := r
 
 	sourceName := r.Student.Name
@@ -125,13 +128,33 @@ func AnonymizeResult(r model.ProfileResult) model.ProfileResult {
 		copyRes.DisplayName = anonName
 	}
 
-	// Drop per-badge URLs in anonymized output
-	if len(r.Badges) > 0 {
-		copyRes.Badges = make([]model.BadgeRecord, len(r.Badges))
-		for i, b := range r.Badges {
-			copyRes.Badges[i] = b
-			copyRes.Badges[i].URL = ""
+	// Always omit league and points in anonymized public mode
+	copyRes.League = ""
+	copyRes.Points = 0
+
+	// Format last badge date string (date only)
+	if copyRes.LastBadgeDate == "" && r.LastBadgeEarnedAt != nil && !r.LastBadgeEarnedAt.IsZero() {
+		copyRes.LastBadgeDate = r.LastBadgeEarnedAt.Format("2006-01-02")
+	}
+
+	// Clear full-precision timestamp and runtime cache status
+	copyRes.FetchedAt = nil
+	copyRes.FromCache = false
+
+	if withBadges {
+		// Include badge details (with scrubbed URL and date-only midnight timestamps)
+		if len(r.Badges) > 0 {
+			copyRes.Badges = make([]model.BadgeRecord, len(r.Badges))
+			for i, b := range r.Badges {
+				copyRes.Badges[i] = b
+				copyRes.Badges[i].URL = ""
+				copyRes.Badges[i].ImageURL = ""
+			}
 		}
+	} else {
+		// Public tier: omit badge details, per-badge dates, badge titles, and full-precision timestamps
+		copyRes.Badges = nil
+		copyRes.LastBadgeEarnedAt = nil
 	}
 
 	// Scrub any error strings containing URLs, UUIDs, emails, or names
@@ -188,18 +211,20 @@ func sanitizeCSVField(s string) string {
 }
 
 // JSON exports results and summary as formatted JSON to w.
-func JSON(w io.Writer, results []model.ProfileResult, goal int, anonymize bool) error {
-	return JSONWithBadRows(w, results, nil, goal, anonymize)
+func JSON(w io.Writer, results []model.ProfileResult, goal int, anonymize bool, includeBadges ...bool) error {
+	withBadges := len(includeBadges) > 0 && includeBadges[0]
+	return JSONWithBadRows(w, results, nil, goal, anonymize, withBadges)
 }
 
 // JSONWithBadRows exports results, summary, and bad-rows report as formatted JSON to w.
 // In anonymized mode, the bad-rows report is dropped to prevent data leakage of raw input URLs/names.
-func JSONWithBadRows(w io.Writer, results []model.ProfileResult, badRows []roster.BadRowReport, goal int, anonymize bool) error {
+func JSONWithBadRows(w io.Writer, results []model.ProfileResult, badRows []roster.BadRowReport, goal int, anonymize bool, includeBadges ...bool) error {
+	withBadges := len(includeBadges) > 0 && includeBadges[0]
 	exportResults := results
 	if anonymize {
 		exportResults = make([]model.ProfileResult, len(results))
 		for i, r := range results {
-			exportResults[i] = AnonymizeResult(r)
+			exportResults[i] = AnonymizeResult(r, withBadges)
 		}
 	}
 
@@ -236,8 +261,6 @@ func CSV(w io.Writer, results []model.ProfileResult, goal int, anonymize bool) e
 			"Total Badges",
 			"Goal",
 			"Last Badge Date",
-			"League",
-			"Points",
 			"Error",
 		}
 	} else {
@@ -266,11 +289,11 @@ func CSV(w io.Writer, results []model.ProfileResult, goal int, anonymize bool) e
 	for _, r := range results {
 		res := r
 		if anonymize {
-			res = AnonymizeResult(r)
+			res = AnonymizeResult(r, false)
 		}
 
-		lastDate := ""
-		if res.LastBadgeEarnedAt != nil && !res.LastBadgeEarnedAt.IsZero() {
+		lastDate := res.LastBadgeDate
+		if lastDate == "" && res.LastBadgeEarnedAt != nil && !res.LastBadgeEarnedAt.IsZero() {
 			lastDate = res.LastBadgeEarnedAt.Format("2006-01-02")
 		}
 
@@ -283,8 +306,6 @@ func CSV(w io.Writer, results []model.ProfileResult, goal int, anonymize bool) e
 				sanitizeCSVField(strconv.Itoa(res.TotalBadges)),
 				sanitizeCSVField(strconv.Itoa(goal)),
 				sanitizeCSVField(lastDate),
-				sanitizeCSVField(res.League),
-				sanitizeCSVField(strconv.Itoa(res.Points)),
 				sanitizeCSVField(res.Error),
 			}
 		} else {

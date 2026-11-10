@@ -86,8 +86,16 @@ type BadgeRecord struct {
 	Title     string    `json:"title"`
 	EarnedAt  time.Time `json:"earned_at"`
 	RawEarned string    `json:"raw_earned"`
-	URL       string    `json:"url"`
+	URL       string    `json:"url,omitempty"`
 	ImageURL  string    `json:"image_url,omitempty"`
+}
+
+// TimePtr returns a pointer to the given time.Time (or nil if zero).
+func TimePtr(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	return &t
 }
 
 // ProfileResult represents the complete tracking evaluation for a single student.
@@ -100,10 +108,11 @@ type ProfileResult struct {
 	Badges            []BadgeRecord `json:"badges,omitempty"`
 	TotalBadges       int           `json:"total_badges"`
 	CountedBadges     int           `json:"counted_badges"`
+	LastBadgeDate     string        `json:"last_badge_date,omitempty"`
 	LastBadgeEarnedAt *time.Time    `json:"last_badge_earned_at,omitempty"`
 	Error             string        `json:"error,omitempty"`
-	FetchedAt         time.Time     `json:"fetched_at"`
-	FromCache         bool          `json:"from_cache"`
+	FetchedAt         *time.Time    `json:"fetched_at,omitempty"`
+	FromCache         bool          `json:"from_cache,omitempty"`
 }
 
 // FallbackProfileLabel creates an unambiguous fallback label of the form "Profile (be55…)"

@@ -138,7 +138,7 @@ func (t *Tracker) Track(ctx context.Context, r *roster.Roster, onProgress Progre
 						DisplayName: fallbackName,
 						Status:      model.StatusNetworkError,
 						Error:       ctx.Err().Error(),
-						FetchedAt:   time.Now().UTC(),
+						FetchedAt:   model.TimePtr(time.Now().UTC()),
 					}
 					if results[tsk.index].Student.Name == "" {
 						results[tsk.index].Student.Name = fallbackName
@@ -178,7 +178,7 @@ func (t *Tracker) processStudent(ctx context.Context, student model.Student) mod
 				res := model.ProfileResult{
 					Student:   student,
 					Status:    model.StatusPrivateOrNotFound,
-					FetchedAt: cached.FetchedAt,
+					FetchedAt: model.TimePtr(cached.FetchedAt),
 					FromCache: true,
 				}
 				if res.DisplayName == "" {
@@ -200,17 +200,18 @@ func (t *Tracker) processStudent(ctx context.Context, student model.Student) mod
 			}
 			res := parse.Evaluate(&data, student, t.config.Goal, t.config.IsBadgeEligible, nil)
 			res.FromCache = true
-			res.FetchedAt = cached.FetchedAt
+			res.FetchedAt = model.TimePtr(cached.FetchedAt)
 			return res
 		}
 	}
 
 	// 2. Fetch HTML over HTTP
 	html, fetchErr := t.fetcher.Fetch(ctx, student.ProfileURL)
+	now := time.Now().UTC()
 	if fetchErr != nil {
 		res := model.ProfileResult{
 			Student:   student,
-			FetchedAt: time.Now().UTC(),
+			FetchedAt: model.TimePtr(now),
 			Error:     fetchErr.Error(),
 		}
 
@@ -222,7 +223,7 @@ func (t *Tracker) processStudent(ctx context.Context, student model.Student) mod
 				_ = t.cache.Set(student.UUID, &cache.Entry{
 					UUID:      student.UUID,
 					Status:    model.StatusPrivateOrNotFound,
-					FetchedAt: res.FetchedAt,
+					FetchedAt: now,
 				})
 			}
 		case errors.Is(fetchErr, fetch.ErrRateLimited):
@@ -247,6 +248,10 @@ func (t *Tracker) processStudent(ctx context.Context, student model.Student) mod
 
 	// 4. Save to cache if evaluation produced a cacheable 200 status (no raw HTML stored)
 	if t.cache != nil && student.UUID != "" && parseErr == nil {
+		fetched := now
+		if res.FetchedAt != nil {
+			fetched = *res.FetchedAt
+		}
 		_ = t.cache.Set(student.UUID, &cache.Entry{
 			UUID:        student.UUID,
 			Status:      res.Status,
@@ -254,7 +259,7 @@ func (t *Tracker) processStudent(ctx context.Context, student model.Student) mod
 			League:      res.League,
 			Points:      res.Points,
 			Badges:      res.Badges,
-			FetchedAt:   res.FetchedAt,
+			FetchedAt:   fetched,
 		})
 	}
 

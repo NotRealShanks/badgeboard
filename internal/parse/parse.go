@@ -278,7 +278,7 @@ func Evaluate(data *ProfileData, student model.Student, goal int, badgeFilter fu
 	now := time.Now().UTC()
 	result := model.ProfileResult{
 		Student:   student,
-		FetchedAt: now,
+		FetchedAt: model.TimePtr(now),
 	}
 
 	if parseErr != nil {
@@ -339,6 +339,9 @@ func Evaluate(data *ProfileData, student model.Student, goal int, badgeFilter fu
 		}
 	}
 	result.LastBadgeEarnedAt = latest
+	if latest != nil {
+		result.LastBadgeDate = latest.Format("2006-01-02")
+	}
 
 	result.Status = model.EvaluateStatus(result.CountedBadges, goal, result.TotalBadges, data.IsPrivate)
 	return result

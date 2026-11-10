@@ -202,18 +202,18 @@ func TestCSVExport_Anonymized(t *testing.T) {
 	}
 
 	header := records[0]
-	if len(header) != 9 {
-		t.Fatalf("expected 9 columns in anonymized CSV header, got %d: %v", len(header), header)
+	if len(header) != 7 {
+		t.Fatalf("expected 7 columns in anonymized CSV header, got %d: %v", len(header), header)
 	}
 	for _, col := range header {
-		if col == "Profile URL" || col == "UUID" {
+		if col == "Profile URL" || col == "UUID" || col == "League" || col == "Points" {
 			t.Errorf("found forbidden column %q in anonymized CSV header", col)
 		}
 	}
 
 	aliceRow := records[1]
-	if len(aliceRow) != 9 {
-		t.Fatalf("expected 9 columns in anonymized CSV row, got %d", len(aliceRow))
+	if len(aliceRow) != 7 {
+		t.Fatalf("expected 7 columns in anonymized CSV row, got %d", len(aliceRow))
 	}
 	if strings.Contains(aliceRow[0], "Alice Johnson") {
 		t.Errorf("name leaked in anonymized CSV: %s", aliceRow[0])
@@ -336,23 +336,107 @@ func TestAnonymize_RealSampleAudit(t *testing.T) {
 		t.Fatalf("reading anonymized CSV failed: %v", err)
 	}
 	header := csvRecords[0]
-	if len(header) != 9 {
-		t.Errorf("expected 9 columns in anonymized CSV header, got %d: %v", len(header), header)
+	if len(header) != 7 {
+		t.Errorf("expected 7 columns in anonymized CSV header, got %d: %v", len(header), header)
 	}
 	for _, col := range header {
-		if col == "Profile URL" || col == "UUID" {
+		if col == "Profile URL" || col == "UUID" || col == "League" || col == "Points" {
 			t.Errorf("found forbidden column %q in anonymized CSV header", col)
 		}
 	}
 	for rIdx, row := range csvRecords {
-		if len(row) != 9 {
-			t.Errorf("row %d has %d columns, expected 9", rIdx, len(row))
+		if len(row) != 7 {
+			t.Errorf("row %d has %d columns, expected 7", rIdx, len(row))
 		}
 	}
 
-	// 4. Assert profile_url and uuid are omitted in anonymized JSON
+	// 4. Assert profile_url, uuid, badges, league, and points are omitted in anonymized JSON
 	if strings.Contains(jsonOut, `"profile_url"`) || strings.Contains(jsonOut, `"uuid"`) {
 		t.Errorf("expected profile_url and uuid fields to be omitted in anonymized JSON, got:\n%s", jsonOut)
+	}
+	if strings.Contains(jsonOut, `"badges"`) || strings.Contains(jsonOut, `"league"`) || strings.Contains(jsonOut, `"points"`) {
+		t.Errorf("expected badges, league, points to be omitted in public JSON, got:\n%s", jsonOut)
+	}
+}
+
+func TestPublicTier_TwoDataTiersAudit(t *testing.T) {
+	now := time.Date(2026, 11, 4, 0, 0, 0, 0, time.UTC)
+	fullUUID := "55555555-6666-7777-8888-999999999999"
+	badgeTitle := "Deploy Kubernetes Applications on Google Cloud"
+
+	res := model.ProfileResult{
+		Student: model.Student{
+			Name:       "Jane Doe",
+			Email:      "jane@example.com",
+			UUID:       fullUUID,
+			ProfileURL: "https://www.skills.google/public_profiles/" + fullUUID,
+		},
+		DisplayName:   "Jane Doe",
+		Status:        model.StatusComplete,
+		CountedBadges: 10,
+		TotalBadges:   10,
+		League:        "Gold League",
+		Points:        450,
+		LastBadgeDate: "2026-11-04",
+		LastBadgeEarnedAt: &now,
+		FetchedAt:         model.TimePtr(time.Now().UTC()),
+		Badges: []model.BadgeRecord{
+			{
+				ID:        "b-1",
+				Title:     badgeTitle,
+				EarnedAt:  now,
+				RawEarned: "Nov 4, 2026 EST",
+				URL:       "https://www.skills.google/public_profiles/" + fullUUID + "/badges/101",
+			},
+		},
+	}
+
+	// 1. PUBLIC TIER (anonymize=true, includeBadges=false)
+	var pubBuf bytes.Buffer
+	if err := JSON(&pubBuf, []model.ProfileResult{res}, 10, true, false); err != nil {
+		t.Fatalf("JSON public export failed: %v", err)
+	}
+	pubOut := pubBuf.String()
+
+	// Must NOT contain badge titles
+	if strings.Contains(pubOut, badgeTitle) {
+		t.Errorf("public output must NOT contain badge titles: %s", pubOut)
+	}
+	// Must NOT contain league or points
+	if strings.Contains(pubOut, "Gold League") || strings.Contains(pubOut, `"league"`) || strings.Contains(pubOut, `"points"`) {
+		t.Errorf("public output must NOT contain league or points: %s", pubOut)
+	}
+	// Must NOT contain profile URL or UUID
+	if strings.Contains(pubOut, fullUUID) || strings.Contains(pubOut, "public_profiles") {
+		t.Errorf("public output must NOT contain UUID or profile URL: %s", pubOut)
+	}
+	// Must NOT contain full-precision timestamps (last_badge_earned_at or fetched_at in student result)
+	if strings.Contains(pubOut, `"last_badge_earned_at"`) || strings.Contains(pubOut, `"fetched_at"`) {
+		t.Errorf("public output must NOT contain full-precision timestamps in student result: %s", pubOut)
+	}
+	// MUST contain date-only last badge date
+	if !strings.Contains(pubOut, `"last_badge_date": "2026-11-04"`) {
+		t.Errorf("public output must contain last_badge_date: %s", pubOut)
+	}
+
+	// 2. DETAILED ANONYMIZED TIER (anonymize=true, includeBadges=true)
+	var detBuf bytes.Buffer
+	if err := JSON(&detBuf, []model.ProfileResult{res}, 10, true, true); err != nil {
+		t.Fatalf("JSON detailed export failed: %v", err)
+	}
+	detOut := detBuf.String()
+
+	// Should contain badge title
+	if !strings.Contains(detOut, badgeTitle) {
+		t.Errorf("detailed anonymized output should contain badge title: %s", detOut)
+	}
+	// But must still omit direct UUID, profile URL, and badge URL
+	if strings.Contains(detOut, fullUUID) || strings.Contains(detOut, "/badges/101") {
+		t.Errorf("detailed anonymized output must still omit UUID and badge URLs: %s", detOut)
+	}
+	// Empty badge "url" field must be omitted from JSON
+	if strings.Contains(detOut, `"url": ""`) {
+		t.Errorf("detailed anonymized output must omit empty badge 'url' field from JSON: %s", detOut)
 	}
 }
 

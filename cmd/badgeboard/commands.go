@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/rand"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -48,9 +47,10 @@ var (
 	flagRPS        float64
 	flagConcurrency int
 	flagRefresh    bool
-	flagNoCache    bool
-	flagAnonymize  bool
-	flagVerbose    bool
+	flagNoCache       bool
+	flagAnonymize     bool
+	flagIncludeBadges bool
+	flagVerbose       bool
 	flagNoColor    bool
 	flagRunFormat    string
 	flagExportFormat string
@@ -250,7 +250,7 @@ func newRunCmd() *cobra.Command {
 
 			// Format output if requested (JSON or CSV)
 			if strings.EqualFold(flagRunFormat, "json") {
-				return export.JSONWithBadRows(os.Stdout, results, rst.BadRows, cfg.Goal, flagAnonymize)
+				return export.JSONWithBadRows(os.Stdout, results, rst.BadRows, cfg.Goal, flagAnonymize, flagIncludeBadges)
 			} else if strings.EqualFold(flagRunFormat, "csv") {
 				return export.CSV(os.Stdout, results, cfg.Goal, flagAnonymize)
 			}
@@ -281,6 +281,7 @@ func newRunCmd() *cobra.Command {
 	}
 
 	runCmd.Flags().StringVar(&flagRunFormat, "format", "", "Output format for stdout (json or csv)")
+	runCmd.Flags().BoolVar(&flagIncludeBadges, "include-badges", false, "Include badge details in anonymized output")
 	return runCmd
 }
 
@@ -333,7 +334,7 @@ func newCheckCmd() *cobra.Command {
 				Badges:        data.Badges,
 				Points:        data.Points,
 				League:        data.League,
-				FetchedAt:     time.Now().UTC(),
+				FetchedAt:     model.TimePtr(time.Now().UTC()),
 			}
 
 			if flagRaw {
@@ -420,7 +421,7 @@ func newExportCmd() *cobra.Command {
 			if strings.EqualFold(flagExportFormat, "csv") {
 				exportErr = export.CSV(outWriter, results, cfg.Goal, flagAnonymize)
 			} else {
-				exportErr = export.JSONWithBadRows(outWriter, results, rst.BadRows, cfg.Goal, flagAnonymize)
+				exportErr = export.JSONWithBadRows(outWriter, results, rst.BadRows, cfg.Goal, flagAnonymize, flagIncludeBadges)
 			}
 			if exportErr != nil {
 				return exportErr
@@ -435,6 +436,7 @@ func newExportCmd() *cobra.Command {
 
 	exportCmd.Flags().StringVar(&flagExportFormat, "format", "json", "Output format (json or csv)")
 	exportCmd.Flags().StringVarP(&flagOut, "out", "o", "", "Destination file path (defaults to stdout)")
+	exportCmd.Flags().BoolVar(&flagIncludeBadges, "include-badges", false, "Include badge details in anonymized output")
 	return exportCmd
 }
 
@@ -501,7 +503,7 @@ func newDemoCmd() *cobra.Command {
 					defer f.Close()
 					outWriter = f
 				}
-				return export.JSONWithBadRows(outWriter, results, nil, goal, flagAnonymize)
+				return export.JSONWithBadRows(outWriter, results, nil, goal, flagAnonymize, flagIncludeBadges)
 
 			case "csv":
 				outWriter := os.Stdout
@@ -532,7 +534,7 @@ func newDemoCmd() *cobra.Command {
 				}
 				defer f.Close()
 
-				if err := export.JSONWithBadRows(f, results, nil, goal, flagAnonymize); err != nil {
+				if err := export.JSONWithBadRows(f, results, nil, goal, flagAnonymize, flagIncludeBadges); err != nil {
 					return fmt.Errorf("writing demo data: %w", err)
 				}
 
@@ -557,6 +559,7 @@ func newDemoCmd() *cobra.Command {
 
 	demoCmd.Flags().StringVar(&flagDemoFormat, "format", "text", "Output format (text, json, or csv)")
 	demoCmd.Flags().StringVarP(&flagOut, "out", "o", "", "Destination file path")
+	demoCmd.Flags().BoolVar(&flagIncludeBadges, "include-badges", false, "Include badge details in anonymized output")
 	return demoCmd
 }
 
@@ -571,8 +574,6 @@ func newVersionCmd() *cobra.Command {
 }
 
 func generateDeterministicDemoData(goal int) []model.ProfileResult {
-	rng := rand.New(rand.NewSource(42))
-
 	badgeTitles := []string{
 		"Deploy Kubernetes Applications on Google Cloud",
 		"Build a Secure Google Cloud Network",
@@ -612,7 +613,12 @@ func generateDeterministicDemoData(goal int) []model.ProfileResult {
 	}
 
 	results := make([]model.ProfileResult, len(students))
-	now := time.Now().UTC()
+	nyLoc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		nyLoc = time.FixedZone("EST", -5*3600)
+	}
+	nowNY := time.Now().In(nyLoc)
+	todayNY := time.Date(nowNY.Year(), nowNY.Month(), nowNY.Day(), 0, 0, 0, 0, nyLoc)
 
 	for i, s := range students {
 		url := fmt.Sprintf("https://www.skills.google/public_profiles/%s", s.uuid)
@@ -629,7 +635,7 @@ func generateDeterministicDemoData(goal int) []model.ProfileResult {
 			TotalBadges:   s.count,
 			Points:        s.count * 30,
 			League:        "Gold League",
-			FetchedAt:     now,
+			FetchedAt:     model.TimePtr(todayNY),
 		}
 
 		if s.count > 0 {
@@ -639,7 +645,7 @@ func generateDeterministicDemoData(goal int) []model.ProfileResult {
 				if daysAgo < 1 {
 					daysAgo = 1
 				}
-				earnedDate := now.Add(-time.Duration(daysAgo)*24*time.Hour - time.Duration((i*5+b*7+rng.Intn(3))%24)*time.Hour)
+				earnedDate := todayNY.AddDate(0, 0, -daysAgo)
 				badges[b] = model.BadgeRecord{
 					ID:        fmt.Sprintf("badge-%d", b+1),
 					Title:     badgeTitles[b%len(badgeTitles)],
@@ -651,6 +657,7 @@ func generateDeterministicDemoData(goal int) []model.ProfileResult {
 			res.Badges = badges
 			last := badges[len(badges)-1].EarnedAt
 			res.LastBadgeEarnedAt = &last
+			res.LastBadgeDate = last.Format("2006-01-02")
 		}
 
 		if s.status == model.StatusPrivateOrNotFound {

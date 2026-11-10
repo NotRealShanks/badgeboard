@@ -82,7 +82,22 @@ This document records the core architectural decisions, design choices, and trad
 
 ---
 
-## 11. Why Go?
+## 12. Two Data Tiers & Privacy Trade-offs (--anonymize vs --include-badges)
+- **Context**: Even when direct identifiers (names, emails, profile URLs, UUIDs) are scrubbed, high-cardinality badge metadata (specific badge titles and completion dates) can act as quasi-identifiers. In small cohorts, a unique combination of earned badges could theoretically correlate back to an individual's public profile.
+- **Decision**: `badgeboard` implements a tiered data privacy model:
+  1. **Tier 1: Public Mode (`--anonymize`, default for public dashboard)**:
+     - Exports only minimal progress data per student: pseudonym, status, counted badges, total badges, goal, and last badge date (`YYYY-MM-DD` date only).
+     - Strictly omits: badge lists, badge titles, per-badge dates, badge URLs, league, points, profile URLs, UUIDs, and full-precision timestamps.
+     - Protects against quasi-identifier linkage and correlation attacks.
+  2. **Tier 2: Detailed Anonymized Mode (`--anonymize --include-badges`)**:
+     - Retains badge titles and dates for expandable detail views while continuing to scrub direct names, emails, profile URLs, UUIDs, and badge URLs.
+     - **Trade-off**: Requires an explicit opt-in (`--include-badges`) because publishing full badge catalogs introduces minor re-identification risk in very small groups.
+  3. **Tier 3: Full Mode (Default CLI / Demo / Internal)**:
+     - Full profile details (display names, leagues, points, badges, URLs) for internal administrative use and demo dashboard testing.
+
+---
+
+## 13. Why Go?
 - **Decision**: Implemented in Go 1.22+.
 - **Rationale**:
   - Single static binary distribution without runtime dependencies (Python, Node, Docker).
