@@ -6,7 +6,7 @@
 #
 # This workflow is strictly disabled by default. To enable:
 # 1. Rename this file by removing the `.disabled` suffix.
-# 2. Configure repository variable: ENABLE_REAL_ROSTER_SYNC=true
+# 2. Configure repository variable: ENABLE_REAL_ROSTER=true
 # 3. Add encrypted repository secret: BADGEBOARD_SALT (HMAC salt)
 # 4. Add encrypted repository secret: REAL_ROSTER_CSV (roster contents)
 # ==============================================================================
@@ -23,7 +23,7 @@ on:
 
 jobs:
   sync:
-    if: vars.ENABLE_REAL_ROSTER_SYNC == 'true'
+    if: vars.ENABLE_REAL_ROSTER == 'true'
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout Repository
