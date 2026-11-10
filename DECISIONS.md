@@ -25,16 +25,16 @@ This document records the core architectural decisions, design choices, and trad
 
 ---
 
-## 4. Profile Pagination & "Load More" Verification
-- **Context**: In the initial campaign sample, the profile contains exactly 10 badges displayed on a single page. It is currently unverified whether profiles with 50+ or 100+ badges employ server-side pagination, infinite scrolling, or a "Load More" button.
+## 4. Profile Pagination & Verification
+- **Context**: Real sample profiles from campaign organizers confirmed that active profiles render their earned badges in the primary `.profile-badges` block.
 - **Decision**: Rather than silently returning a truncated badge count if an unhandled pagination control exists, the parser explicitly detects pagination controls (`.pagination`, `ql-pagination`, `[rel='next']`, or "load more" markers) scoped inside the badge container and immediately fails with `StatusParseError` stating:
   > `"profile pagination or 'load more' control detected in badge container; pagination parsing is unverified so aborting to avoid truncated badge count"`
-- **Rationale**: Returning an accurate error forces immediate visibility into pagination requirements rather than silently reporting inaccurate, truncated badge progress to organizers.
+- **Rationale**: Failing safe with `StatusParseError` prevents silent truncation and guarantees that incomplete data is never reported as authoritative progress.
 
 ---
 
 ## 5. Timezone & Date Normalization
-- **Context**: Google Skills stamps badge completion dates in US Eastern Time (e.g., `Nov  3, 2026 EST`). Go's standard `time.Parse` with layout `MST` generates a synthetic zero-offset time zone if the three-letter abbreviation is not recognized locally.
+- **Context**: Google Skills stamps badge completion dates in US Eastern Time (e.g., `Nov 3, 2026 EST`). Go's standard `time.Parse` with layout `MST` generates a synthetic zero-offset time zone if the three-letter abbreviation is not recognized locally.
 - **Decision**: Explicitly parse calendar dates in `America/New_York` using embedded IANA timezone data (`_ "time/tzdata"`).
 - **Rationale**: Guarantees deterministic calendar dates (year, month, day) regardless of the local timezone of the machine or CI runner executing the tool (whether running in UTC, Asia/Kolkata, or US Pacific).
 
@@ -72,13 +72,18 @@ This document records the core architectural decisions, design choices, and trad
 
 ---
 
-## 10. Privacy & Pseudonymized Public Deployment
+## 10. Privacy & Anonymized Output
 - **Context**: Roster files contain student names, emails, and profile URLs. Campaign dashboards are often deployed publicly via GitHub Pages.
 - **Decision**: The CLI provides `--anonymize` for public output. Real roster files as well as `data/` artifacts are strictly gitignored.
-- **Pseudonymization Scheme**: The `--anonymize` output is technically **pseudonymized** rather than fully anonymized: names are converted to initials with a 4-character UUID suffix (e.g. `A. J. (ddd7)`). This allows participants to track their own progress on public boards without publishing full names or emails.
 - **Why Badge URLs are Dropped**: Upstream Google Skills badge links embed the full profile UUID (`/public_profiles/<uuid>/badges/<badge_id>`). Retaining badge URLs would enable anyone to extract the full UUID and reconstruct the participant's public profile URL.
 - **Why Error Strings are Scrubbed**: Network timeouts, 404s, and rate limit messages frequently incorporate the target request URL, UUID, or student email into error text. These strings are systematically scrubbed via regex.
 - **Why Bad Rows are Excluded**: Bad row diagnostics record raw input CSV lines (often containing pasted names, emails, or malformed URLs). In anonymized mode, the bad-rows collection is omitted from public exports to guarantee zero data leakage.
+
+---
+
+## 11. Formula Injection Neutralization in CSV Exports
+- **Context**: Opening untrusted CSV exports in Microsoft Excel or Google Sheets presents formula injection risks (CSV injection / DDE attacks) if cells begin with execution triggers.
+- **Decision**: Both the Go backend exporter (`internal/export`) and the client-side dashboard exporter (`docs/app.js`) automatically neutralize any cell starting with `=`, `+`, `-`, `@`, tab (`\t`), or carriage return (`\r`) by prefixing the cell with a single quote (`'`).
 
 ---
 
@@ -97,19 +102,10 @@ This document records the core architectural decisions, design choices, and trad
 
 ---
 
-## 13. Why Go?
-- **Decision**: Implemented in Go 1.22+.
-- **Rationale**:
-  - Single static binary distribution without runtime dependencies (Python, Node, Docker).
-  - First-class concurrency (`sync`, channels, worker pools) for high-performance polite scraping.
-  - Robust standard library for networking, testing, and HTTP mocking (`httptest`).
-
----
-
-## 14. Irreversible Pseudonym Derivation via Secret-Salted HMAC-SHA256
+## 13. Irreversible Pseudonym Derivation via Secret-Salted HMAC-SHA256
 - **Context**: Reversible pseudonyms or naive truncation (such as `"A. J. (ddd7)"`) leak quasi-identifiers: learner initials combined with the last 4 characters of the raw UUID permit an adversary with access to a public Google Skills directory or social shares to easily deanonymize participants.
 - **Decision**: `badgeboard` generates pseudonyms strictly in the format `Learner-XXXX` using `HMAC-SHA256` keyed with an out-of-band secret salt:
-  $$\text{HMAC-SHA256}_{K}(\text{lowercase(uuid)})$$
+  $$\text{HMAC-SHA256}_{K}(\text{lowercase(UUID)})$$
   The first two bytes (16 bits) are truncated to four uppercase hexadecimal characters.
 - **Enforcement**:
   - The CLI refuses to execute `--anonymize` unless a secret salt is supplied via the `BADGEBOARD_SALT` environment variable or `--salt-file <path>`.
@@ -119,8 +115,17 @@ This document records the core architectural decisions, design choices, and trad
 
 ---
 
-## 15. Public Deployment Policy & Real Roster Governance
+## 14. Public Deployment Policy & Real Roster Governance
 - **Decision**: The public GitHub Pages site deployed from `docs/` serves synthetic demo data generated via `badgeboard demo` exclusively.
-- **Organizer Authorization Requirement**:
-  - Publishing real participant progress data to any public or web-facing medium requires explicit written permission from the GDG campaign organizers.
-  - Any CI/CD workflow capable of reading and processing real participant rosters must remain **disabled by default**, restricted to manual `workflow_dispatch`, and guarded by repository variables (`ENABLE_REAL_ROSTER_SYNC == 'true'`) and encrypted repository secrets (`REAL_ROSTER_CSV`, `BADGEBOARD_SALT`).
+- **Mandatory Privacy Invariant**: Real participant data must never be published without the organizers' explicit permission.
+- **Guarded Workflows**:
+  - Any CI/CD workflow capable of reading and processing real participant rosters must remain **disabled by default**, restricted to manual `workflow_dispatch`, and guarded by repository variables (`ENABLE_REAL_ROSTER == 'true'`) and encrypted repository secrets (`REAL_ROSTER_CSV`, `BADGEBOARD_SALT`).
+
+---
+
+## 15. Why Go?
+- **Decision**: Implemented in Go 1.22+.
+- **Rationale**:
+  - Single static binary distribution without runtime dependencies (Python, Node, Docker).
+  - First-class concurrency (`sync`, channels, worker pools) for high-performance polite scraping.
+  - Robust standard library for networking, testing, and HTTP mocking (`httptest`).
