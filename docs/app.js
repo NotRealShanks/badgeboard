@@ -257,7 +257,9 @@
     if (state.searchQuery) {
       filtered = filtered.filter(r => {
         const name = (r.student && r.student.name ? r.student.name : (r.display_name || '')).toLowerCase();
-        return name.includes(state.searchQuery);
+        const url = (r.url || (r.student && r.student.profile_url) || '').toLowerCase();
+        const uuid = (r.uuid || (r.student && r.student.uuid) || '').toLowerCase();
+        return name.includes(state.searchQuery) || url.includes(state.searchQuery) || uuid.includes(state.searchQuery);
       });
     }
 
