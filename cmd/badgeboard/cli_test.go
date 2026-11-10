@@ -32,6 +32,22 @@ func TestCLI_Version(t *testing.T) {
 	}
 }
 
+func TestCLI_Version_Short(t *testing.T) {
+	cmd := newRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetArgs([]string{"version", "--short"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("version --short cmd failed: %v", err)
+	}
+
+	out := strings.TrimSpace(buf.String())
+	if out != version {
+		t.Errorf("expected version %q, got %q", version, out)
+	}
+}
+
 func TestCLI_Demo(t *testing.T) {
 	tmpDir := t.TempDir()
 	outPath := filepath.Join(tmpDir, "demo_results.json")

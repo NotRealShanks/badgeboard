@@ -588,13 +588,20 @@ func newDemoCmd() *cobra.Command {
 }
 
 func newVersionCmd() *cobra.Command {
-	return &cobra.Command{
+	var short bool
+	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Print badgeboard version",
 		Run: func(cmd *cobra.Command, args []string) {
+			if short {
+				fmt.Fprintln(cmd.OutOrStdout(), version)
+				return
+			}
 			fmt.Fprintf(cmd.OutOrStdout(), "badgeboard %s (commit: %s, built: %s)\n", version, commit, date)
 		},
 	}
+	cmd.Flags().BoolVar(&short, "short", false, "Print only the version number")
+	return cmd
 }
 
 func generateDeterministicDemoData(goal int) []model.ProfileResult {
