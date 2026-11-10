@@ -34,6 +34,8 @@ scratch/
 # Allow only testdata fixtures and demo data in docs/
 !testdata/*.csv
 !testdata/*.json
+!docs/data/
+!docs/data/results.json
 !docs/data/*.json
 
 # Local configs
