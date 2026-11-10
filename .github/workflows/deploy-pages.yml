@@ -1,11 +1,8 @@
 name: Deploy GitHub Pages Dashboard
 
+# Trigger on manual trigger, or push to main when docs change.
+# Note: Requires GitHub Pages to be enabled in repository Settings -> Pages -> Source: "GitHub Actions".
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'docs/**'
   workflow_dispatch:
 
 permissions:
