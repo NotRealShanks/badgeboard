@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -264,10 +265,20 @@ func newRunCmd() *cobra.Command {
 			}
 
 			// Format output if requested (JSON or CSV)
+			var outWriter io.Writer = os.Stdout
+			if flagOut != "" {
+				f, err := os.Create(flagOut)
+				if err != nil {
+					return fmt.Errorf("creating output file %q: %w", flagOut, err)
+				}
+				defer f.Close()
+				outWriter = f
+			}
+
 			if strings.EqualFold(flagRunFormat, "json") {
-				return export.JSONWithBadRows(os.Stdout, results, rst.BadRows, cfg.Goal, flagAnonymize, salt, flagIncludeBadges)
+				return export.JSONWithBadRows(outWriter, results, rst.BadRows, cfg.Goal, flagAnonymize, salt, flagIncludeBadges)
 			} else if strings.EqualFold(flagRunFormat, "csv") {
-				return export.CSV(os.Stdout, results, cfg.Goal, flagAnonymize, salt)
+				return export.CSV(outWriter, results, cfg.Goal, flagAnonymize, salt)
 			}
 
 			// Render final Lip Gloss terminal table
@@ -296,6 +307,7 @@ func newRunCmd() *cobra.Command {
 	}
 
 	runCmd.Flags().StringVar(&flagRunFormat, "format", "", "Output format for stdout (json or csv)")
+	runCmd.Flags().StringVarP(&flagOut, "out", "o", "", "Destination file path")
 	runCmd.Flags().BoolVar(&flagIncludeBadges, "include-badges", false, "Include badge details in anonymized output")
 	return runCmd
 }
