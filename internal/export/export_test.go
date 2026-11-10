@@ -74,7 +74,7 @@ func TestJSONExport(t *testing.T) {
 	results := sampleResults()
 	var buf bytes.Buffer
 
-	err := JSON(&buf, results, 10, false)
+	err := JSON(&buf, results, 10, false, nil)
 	if err != nil {
 		t.Fatalf("JSON export failed: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestJSONExport_Anonymized(t *testing.T) {
 	results := sampleResults()
 	var buf bytes.Buffer
 
-	err := JSON(&buf, results, 0, true)
+	err := JSON(&buf, results, 0, true, DemoSalt)
 	if err != nil {
 		t.Fatalf("JSON anonymized export failed: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestCSVExport(t *testing.T) {
 	results := sampleResults()
 	var buf bytes.Buffer
 
-	err := CSV(&buf, results, 10, false)
+	err := CSV(&buf, results, 10, false, nil)
 	if err != nil {
 		t.Fatalf("CSV export failed: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestCSVExport_Anonymized(t *testing.T) {
 	results := sampleResults()
 	var buf bytes.Buffer
 
-	err := CSV(&buf, results, 10, true)
+	err := CSV(&buf, results, 10, true, DemoSalt)
 	if err != nil {
 		t.Fatalf("CSV anonymized export failed: %v", err)
 	}
@@ -218,8 +218,8 @@ func TestCSVExport_Anonymized(t *testing.T) {
 	if strings.Contains(aliceRow[0], "Alice Johnson") {
 		t.Errorf("name leaked in anonymized CSV: %s", aliceRow[0])
 	}
-	if !strings.Contains(aliceRow[0], "A. J.") {
-		t.Errorf("expected initials in anonymized CSV, got: %s", aliceRow[0])
+	if !strings.HasPrefix(aliceRow[0], "Learner-") {
+		t.Errorf("expected Learner-XXXX format in anonymized CSV, got: %s", aliceRow[0])
 	}
 	if aliceRow[1] != string(model.StatusComplete) {
 		t.Errorf("expected status 'complete' at col 1 in omitted-URL anonymized CSV, got %q", aliceRow[1])
@@ -229,23 +229,15 @@ func TestCSVExport_Anonymized(t *testing.T) {
 	}
 }
 
-func TestAnonymizeName_EdgeCases(t *testing.T) {
-	// Empty name
-	anon := AnonymizeName("", "11111111-2222-3333-4444-555555555555")
-	if !strings.HasPrefix(anon, "Participant") {
-		t.Errorf("expected Participant prefix for empty name, got: %s", anon)
+func TestDerivePseudonym_EdgeCases(t *testing.T) {
+	anon := DerivePseudonym("11111111-2222-3333-4444-555555555555", DemoSalt)
+	if !strings.HasPrefix(anon, "Learner-") || len(anon) != 12 {
+		t.Errorf("expected Learner-XXXX, got: %s", anon)
 	}
 
-	// Single word name
-	anonSingle := AnonymizeName("Cher", "11111111-2222-3333-4444-555555555555")
-	if !strings.HasPrefix(anonSingle, "C.") {
-		t.Errorf("expected C. for single name, got: %s", anonSingle)
-	}
-
-	// Short UUID fallback
-	anonShort := AnonymizeName("Shorty", "abc")
-	if !strings.Contains(anonShort, "(abc)") {
-		t.Errorf("expected (abc), got: %s", anonShort)
+	anonShort := DerivePseudonym("abc", DemoSalt)
+	if !strings.HasPrefix(anonShort, "Learner-") || len(anonShort) != 12 {
+		t.Errorf("expected Learner-XXXX, got: %s", anonShort)
 	}
 }
 
@@ -294,7 +286,7 @@ func TestAnonymize_RealSampleAudit(t *testing.T) {
 
 	// 1. Check JSON anonymized export
 	var jsonBuf bytes.Buffer
-	if err := JSON(&jsonBuf, []model.ProfileResult{res}, 10, true); err != nil {
+	if err := JSON(&jsonBuf, []model.ProfileResult{res}, 10, true, DemoSalt); err != nil {
 		t.Fatalf("JSON export failed: %v", err)
 	}
 	jsonOut := jsonBuf.String()
@@ -318,7 +310,7 @@ func TestAnonymize_RealSampleAudit(t *testing.T) {
 
 	// 2. Check CSV anonymized export
 	var csvBuf bytes.Buffer
-	if err := CSV(&csvBuf, []model.ProfileResult{res}, 10, true); err != nil {
+	if err := CSV(&csvBuf, []model.ProfileResult{res}, 10, true, DemoSalt); err != nil {
 		t.Fatalf("CSV export failed: %v", err)
 	}
 	csvOut := csvBuf.String()
@@ -393,7 +385,7 @@ func TestPublicTier_TwoDataTiersAudit(t *testing.T) {
 
 	// 1. PUBLIC TIER (anonymize=true, includeBadges=false)
 	var pubBuf bytes.Buffer
-	if err := JSON(&pubBuf, []model.ProfileResult{res}, 10, true, false); err != nil {
+	if err := JSON(&pubBuf, []model.ProfileResult{res}, 10, true, DemoSalt, false); err != nil {
 		t.Fatalf("JSON public export failed: %v", err)
 	}
 	pubOut := pubBuf.String()
@@ -421,7 +413,7 @@ func TestPublicTier_TwoDataTiersAudit(t *testing.T) {
 
 	// 2. DETAILED ANONYMIZED TIER (anonymize=true, includeBadges=true)
 	var detBuf bytes.Buffer
-	if err := JSON(&detBuf, []model.ProfileResult{res}, 10, true, true); err != nil {
+	if err := JSON(&detBuf, []model.ProfileResult{res}, 10, true, DemoSalt, true); err != nil {
 		t.Fatalf("JSON detailed export failed: %v", err)
 	}
 	detOut := detBuf.String()
@@ -456,7 +448,7 @@ func TestCSVExport_FormulaInjectionNeutralized(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := CSV(&buf, maliciousResults, 10, false); err != nil {
+	if err := CSV(&buf, maliciousResults, 10, false, nil); err != nil {
 		t.Fatalf("CSV export failed: %v", err)
 	}
 
@@ -547,7 +539,7 @@ func TestAnonymize_FailurePathAndBadRowsAudit(t *testing.T) {
 
 	// 1. JSON anonymized test
 	var jsonBuf bytes.Buffer
-	if err := JSONWithBadRows(&jsonBuf, results, badRows, 10, true); err != nil {
+	if err := JSONWithBadRows(&jsonBuf, results, badRows, 10, true, DemoSalt); err != nil {
 		t.Fatalf("JSONWithBadRows failed: %v", err)
 	}
 	jsonOut := jsonBuf.String()
@@ -567,7 +559,7 @@ func TestAnonymize_FailurePathAndBadRowsAudit(t *testing.T) {
 
 	// 2. CSV anonymized test
 	var csvBuf bytes.Buffer
-	if err := CSV(&csvBuf, results, 10, true); err != nil {
+	if err := CSV(&csvBuf, results, 10, true, DemoSalt); err != nil {
 		t.Fatalf("CSV failed: %v", err)
 	}
 	csvOut := csvBuf.String()
@@ -582,6 +574,64 @@ func TestAnonymize_FailurePathAndBadRowsAudit(t *testing.T) {
 		if strings.Contains(csvOut, str) {
 			t.Errorf("Anonymized CSV audit failed: found forbidden string %q in CSV output", str)
 		}
+	}
+}
+
+func TestDerivePseudonym_HMACSecretSalt(t *testing.T) {
+	uuid := "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+	rawSuffix := "7890"
+
+	salt1 := []byte("salt-alpha-2026-secret-A")
+	salt2 := []byte("salt-beta-2026-secret-B")
+
+	p1 := DerivePseudonym(uuid, salt1)
+	p2 := DerivePseudonym(uuid, salt2)
+
+	// 1. Must match format "Learner-XXXX" (Learner- + 4 uppercase hex characters)
+	if !strings.HasPrefix(p1, "Learner-") || len(p1) != 12 {
+		t.Errorf("pseudonym %q does not match format Learner-XXXX (expected length 12)", p1)
+	}
+	if !strings.HasPrefix(p2, "Learner-") || len(p2) != 12 {
+		t.Errorf("pseudonym %q does not match format Learner-XXXX (expected length 12)", p2)
+	}
+
+	// 2. Different salts MUST yield different pseudonyms for the same UUID
+	if p1 == p2 {
+		t.Errorf("expected different pseudonyms for different salts, but got %q for both", p1)
+	}
+
+	// 3. Same salt MUST yield deterministic pseudonym
+	p1Again := DerivePseudonym(uuid, salt1)
+	if p1 != p1Again {
+		t.Errorf("expected deterministic pseudonym for same salt, got %q vs %q", p1, p1Again)
+	}
+
+	// 4. Pseudonym suffix MUST NOT match raw UUID suffix
+	p1Suffix := strings.TrimPrefix(p1, "Learner-")
+	p2Suffix := strings.TrimPrefix(p2, "Learner-")
+	if strings.EqualFold(p1Suffix, rawSuffix) || strings.EqualFold(p2Suffix, rawSuffix) {
+		t.Errorf("pseudonym suffix leaked raw UUID suffix %q", rawSuffix)
+	}
+
+	// 5. Verify ResolveSalt behavior
+	// Unset BADGEBOARD_SALT and no flags -> must error
+	t.Setenv("BADGEBOARD_SALT", "")
+	_, err := ResolveSalt("", false)
+	if err == nil {
+		t.Error("expected ResolveSalt to fail when no salt is provided and demo-salt is false")
+	}
+
+	// With demo-salt -> success
+	sDemo, err := ResolveSalt("", true)
+	if err != nil || len(sDemo) == 0 {
+		t.Errorf("expected demo salt to succeed, got %v", err)
+	}
+
+	// With env var -> success
+	t.Setenv("BADGEBOARD_SALT", "env-secret-salt")
+	sEnv, err := ResolveSalt("", false)
+	if err != nil || string(sEnv) != "env-secret-salt" {
+		t.Errorf("expected env salt to match, got %v", err)
 	}
 }
 

@@ -1,0 +1,715 @@
+{
+  "summary": {
+    "generated_at": "2026-11-10T15:00:00Z",
+    "goal": 10,
+    "total_students": 15,
+    "complete_count": 4,
+    "in_progress_count": 5,
+    "no_badges_count": 2,
+    "private_or_not_found_count": 2,
+    "error_count": 2,
+    "anonymized": false
+  },
+  "results": [
+    {
+      "student": {
+        "profile_url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000001",
+        "uuid": "11111111-aaaa-bbbb-cccc-000000000001",
+        "name": "Orion Sterling",
+        "row_number": 2
+      },
+      "status": "complete",
+      "display_name": "Orion Sterling",
+      "league": "Gold League",
+      "points": 300,
+      "badges": [
+        {
+          "id": "badge-1",
+          "title": "Deploy Kubernetes Applications on Google Cloud",
+          "earned_at": "2026-10-16T00:00:00-04:00",
+          "raw_earned": "Oct 16, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000001/badges/100"
+        },
+        {
+          "id": "badge-2",
+          "title": "Build a Secure Google Cloud Network",
+          "earned_at": "2026-10-18T00:00:00-04:00",
+          "raw_earned": "Oct 18, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000001/badges/101"
+        },
+        {
+          "id": "badge-3",
+          "title": "Set Up and Configure a Cloud Environment in Google Cloud",
+          "earned_at": "2026-10-20T00:00:00-04:00",
+          "raw_earned": "Oct 20, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000001/badges/102"
+        },
+        {
+          "id": "badge-4",
+          "title": "Perform Foundational Infrastructure Tasks in Google Cloud",
+          "earned_at": "2026-10-22T00:00:00-04:00",
+          "raw_earned": "Oct 22, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000001/badges/103"
+        },
+        {
+          "id": "badge-5",
+          "title": "Create and Manage Cloud Spanner Instances",
+          "earned_at": "2026-10-24T00:00:00-04:00",
+          "raw_earned": "Oct 24, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000001/badges/104"
+        },
+        {
+          "id": "badge-6",
+          "title": "Engineer Data for Predictive Modeling with BigQuery ML",
+          "earned_at": "2026-10-26T00:00:00-04:00",
+          "raw_earned": "Oct 26, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000001/badges/105"
+        },
+        {
+          "id": "badge-7",
+          "title": "Implement DevOps in Google Cloud",
+          "earned_at": "2026-10-28T00:00:00-04:00",
+          "raw_earned": "Oct 28, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000001/badges/106"
+        },
+        {
+          "id": "badge-8",
+          "title": "Build Infrastructure with Terraform on Google Cloud",
+          "earned_at": "2026-10-30T00:00:00-04:00",
+          "raw_earned": "Oct 30, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000001/badges/107"
+        },
+        {
+          "id": "badge-9",
+          "title": "Monitor and Log with Google Cloud Observability",
+          "earned_at": "2026-11-01T00:00:00-04:00",
+          "raw_earned": "Nov 1, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000001/badges/108"
+        },
+        {
+          "id": "badge-10",
+          "title": "Implement Cloud Security Fundamentals on Google Cloud",
+          "earned_at": "2026-11-03T00:00:00-05:00",
+          "raw_earned": "Nov 3, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000001/badges/109"
+        }
+      ],
+      "total_badges": 10,
+      "counted_badges": 10,
+      "last_badge_date": "2026-11-03",
+      "last_badge_earned_at": "2026-11-03T00:00:00-05:00",
+      "fetched_at": "2026-11-10T00:00:00-05:00"
+    },
+    {
+      "student": {
+        "profile_url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000002",
+        "uuid": "11111111-aaaa-bbbb-cccc-000000000002",
+        "name": "Lyra Vance",
+        "row_number": 3
+      },
+      "status": "complete",
+      "display_name": "Lyra Vance",
+      "league": "Gold League",
+      "points": 300,
+      "badges": [
+        {
+          "id": "badge-1",
+          "title": "Deploy Kubernetes Applications on Google Cloud",
+          "earned_at": "2026-10-17T00:00:00-04:00",
+          "raw_earned": "Oct 17, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000002/badges/100"
+        },
+        {
+          "id": "badge-2",
+          "title": "Build a Secure Google Cloud Network",
+          "earned_at": "2026-10-19T00:00:00-04:00",
+          "raw_earned": "Oct 19, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000002/badges/101"
+        },
+        {
+          "id": "badge-3",
+          "title": "Set Up and Configure a Cloud Environment in Google Cloud",
+          "earned_at": "2026-10-21T00:00:00-04:00",
+          "raw_earned": "Oct 21, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000002/badges/102"
+        },
+        {
+          "id": "badge-4",
+          "title": "Perform Foundational Infrastructure Tasks in Google Cloud",
+          "earned_at": "2026-10-23T00:00:00-04:00",
+          "raw_earned": "Oct 23, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000002/badges/103"
+        },
+        {
+          "id": "badge-5",
+          "title": "Create and Manage Cloud Spanner Instances",
+          "earned_at": "2026-10-25T00:00:00-04:00",
+          "raw_earned": "Oct 25, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000002/badges/104"
+        },
+        {
+          "id": "badge-6",
+          "title": "Engineer Data for Predictive Modeling with BigQuery ML",
+          "earned_at": "2026-10-27T00:00:00-04:00",
+          "raw_earned": "Oct 27, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000002/badges/105"
+        },
+        {
+          "id": "badge-7",
+          "title": "Implement DevOps in Google Cloud",
+          "earned_at": "2026-10-29T00:00:00-04:00",
+          "raw_earned": "Oct 29, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000002/badges/106"
+        },
+        {
+          "id": "badge-8",
+          "title": "Build Infrastructure with Terraform on Google Cloud",
+          "earned_at": "2026-10-31T00:00:00-04:00",
+          "raw_earned": "Oct 31, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000002/badges/107"
+        },
+        {
+          "id": "badge-9",
+          "title": "Monitor and Log with Google Cloud Observability",
+          "earned_at": "2026-11-02T00:00:00-05:00",
+          "raw_earned": "Nov 2, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000002/badges/108"
+        },
+        {
+          "id": "badge-10",
+          "title": "Implement Cloud Security Fundamentals on Google Cloud",
+          "earned_at": "2026-11-04T00:00:00-05:00",
+          "raw_earned": "Nov 4, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000002/badges/109"
+        }
+      ],
+      "total_badges": 10,
+      "counted_badges": 10,
+      "last_badge_date": "2026-11-04",
+      "last_badge_earned_at": "2026-11-04T00:00:00-05:00",
+      "fetched_at": "2026-11-10T00:00:00-05:00"
+    },
+    {
+      "student": {
+        "profile_url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000003",
+        "uuid": "11111111-aaaa-bbbb-cccc-000000000003",
+        "name": "Corin Calder",
+        "row_number": 4
+      },
+      "status": "complete",
+      "display_name": "Corin Calder",
+      "league": "Gold League",
+      "points": 300,
+      "badges": [
+        {
+          "id": "badge-1",
+          "title": "Deploy Kubernetes Applications on Google Cloud",
+          "earned_at": "2026-10-18T00:00:00-04:00",
+          "raw_earned": "Oct 18, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000003/badges/100"
+        },
+        {
+          "id": "badge-2",
+          "title": "Build a Secure Google Cloud Network",
+          "earned_at": "2026-10-20T00:00:00-04:00",
+          "raw_earned": "Oct 20, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000003/badges/101"
+        },
+        {
+          "id": "badge-3",
+          "title": "Set Up and Configure a Cloud Environment in Google Cloud",
+          "earned_at": "2026-10-22T00:00:00-04:00",
+          "raw_earned": "Oct 22, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000003/badges/102"
+        },
+        {
+          "id": "badge-4",
+          "title": "Perform Foundational Infrastructure Tasks in Google Cloud",
+          "earned_at": "2026-10-24T00:00:00-04:00",
+          "raw_earned": "Oct 24, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000003/badges/103"
+        },
+        {
+          "id": "badge-5",
+          "title": "Create and Manage Cloud Spanner Instances",
+          "earned_at": "2026-10-26T00:00:00-04:00",
+          "raw_earned": "Oct 26, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000003/badges/104"
+        },
+        {
+          "id": "badge-6",
+          "title": "Engineer Data for Predictive Modeling with BigQuery ML",
+          "earned_at": "2026-10-28T00:00:00-04:00",
+          "raw_earned": "Oct 28, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000003/badges/105"
+        },
+        {
+          "id": "badge-7",
+          "title": "Implement DevOps in Google Cloud",
+          "earned_at": "2026-10-30T00:00:00-04:00",
+          "raw_earned": "Oct 30, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000003/badges/106"
+        },
+        {
+          "id": "badge-8",
+          "title": "Build Infrastructure with Terraform on Google Cloud",
+          "earned_at": "2026-11-01T00:00:00-04:00",
+          "raw_earned": "Nov 1, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000003/badges/107"
+        },
+        {
+          "id": "badge-9",
+          "title": "Monitor and Log with Google Cloud Observability",
+          "earned_at": "2026-11-03T00:00:00-05:00",
+          "raw_earned": "Nov 3, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000003/badges/108"
+        },
+        {
+          "id": "badge-10",
+          "title": "Implement Cloud Security Fundamentals on Google Cloud",
+          "earned_at": "2026-11-05T00:00:00-05:00",
+          "raw_earned": "Nov 5, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000003/badges/109"
+        }
+      ],
+      "total_badges": 10,
+      "counted_badges": 10,
+      "last_badge_date": "2026-11-05",
+      "last_badge_earned_at": "2026-11-05T00:00:00-05:00",
+      "fetched_at": "2026-11-10T00:00:00-05:00"
+    },
+    {
+      "student": {
+        "profile_url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000004",
+        "uuid": "11111111-aaaa-bbbb-cccc-000000000004",
+        "name": "Zephyr Drake",
+        "row_number": 5
+      },
+      "status": "complete",
+      "display_name": "Zephyr Drake",
+      "league": "Gold League",
+      "points": 300,
+      "badges": [
+        {
+          "id": "badge-1",
+          "title": "Deploy Kubernetes Applications on Google Cloud",
+          "earned_at": "2026-10-16T00:00:00-04:00",
+          "raw_earned": "Oct 16, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000004/badges/100"
+        },
+        {
+          "id": "badge-2",
+          "title": "Build a Secure Google Cloud Network",
+          "earned_at": "2026-10-18T00:00:00-04:00",
+          "raw_earned": "Oct 18, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000004/badges/101"
+        },
+        {
+          "id": "badge-3",
+          "title": "Set Up and Configure a Cloud Environment in Google Cloud",
+          "earned_at": "2026-10-20T00:00:00-04:00",
+          "raw_earned": "Oct 20, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000004/badges/102"
+        },
+        {
+          "id": "badge-4",
+          "title": "Perform Foundational Infrastructure Tasks in Google Cloud",
+          "earned_at": "2026-10-22T00:00:00-04:00",
+          "raw_earned": "Oct 22, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000004/badges/103"
+        },
+        {
+          "id": "badge-5",
+          "title": "Create and Manage Cloud Spanner Instances",
+          "earned_at": "2026-10-24T00:00:00-04:00",
+          "raw_earned": "Oct 24, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000004/badges/104"
+        },
+        {
+          "id": "badge-6",
+          "title": "Engineer Data for Predictive Modeling with BigQuery ML",
+          "earned_at": "2026-10-26T00:00:00-04:00",
+          "raw_earned": "Oct 26, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000004/badges/105"
+        },
+        {
+          "id": "badge-7",
+          "title": "Implement DevOps in Google Cloud",
+          "earned_at": "2026-10-28T00:00:00-04:00",
+          "raw_earned": "Oct 28, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000004/badges/106"
+        },
+        {
+          "id": "badge-8",
+          "title": "Build Infrastructure with Terraform on Google Cloud",
+          "earned_at": "2026-10-30T00:00:00-04:00",
+          "raw_earned": "Oct 30, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000004/badges/107"
+        },
+        {
+          "id": "badge-9",
+          "title": "Monitor and Log with Google Cloud Observability",
+          "earned_at": "2026-11-01T00:00:00-04:00",
+          "raw_earned": "Nov 1, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000004/badges/108"
+        },
+        {
+          "id": "badge-10",
+          "title": "Implement Cloud Security Fundamentals on Google Cloud",
+          "earned_at": "2026-11-03T00:00:00-05:00",
+          "raw_earned": "Nov 3, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000004/badges/109"
+        }
+      ],
+      "total_badges": 10,
+      "counted_badges": 10,
+      "last_badge_date": "2026-11-03",
+      "last_badge_earned_at": "2026-11-03T00:00:00-05:00",
+      "fetched_at": "2026-11-10T00:00:00-05:00"
+    },
+    {
+      "student": {
+        "profile_url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000005",
+        "uuid": "11111111-aaaa-bbbb-cccc-000000000005",
+        "name": "Astra Thorne",
+        "row_number": 6
+      },
+      "status": "in_progress",
+      "display_name": "Astra Thorne",
+      "league": "Gold League",
+      "points": 240,
+      "badges": [
+        {
+          "id": "badge-1",
+          "title": "Deploy Kubernetes Applications on Google Cloud",
+          "earned_at": "2026-10-17T00:00:00-04:00",
+          "raw_earned": "Oct 17, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000005/badges/100"
+        },
+        {
+          "id": "badge-2",
+          "title": "Build a Secure Google Cloud Network",
+          "earned_at": "2026-10-19T00:00:00-04:00",
+          "raw_earned": "Oct 19, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000005/badges/101"
+        },
+        {
+          "id": "badge-3",
+          "title": "Set Up and Configure a Cloud Environment in Google Cloud",
+          "earned_at": "2026-10-21T00:00:00-04:00",
+          "raw_earned": "Oct 21, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000005/badges/102"
+        },
+        {
+          "id": "badge-4",
+          "title": "Perform Foundational Infrastructure Tasks in Google Cloud",
+          "earned_at": "2026-10-23T00:00:00-04:00",
+          "raw_earned": "Oct 23, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000005/badges/103"
+        },
+        {
+          "id": "badge-5",
+          "title": "Create and Manage Cloud Spanner Instances",
+          "earned_at": "2026-10-25T00:00:00-04:00",
+          "raw_earned": "Oct 25, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000005/badges/104"
+        },
+        {
+          "id": "badge-6",
+          "title": "Engineer Data for Predictive Modeling with BigQuery ML",
+          "earned_at": "2026-10-27T00:00:00-04:00",
+          "raw_earned": "Oct 27, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000005/badges/105"
+        },
+        {
+          "id": "badge-7",
+          "title": "Implement DevOps in Google Cloud",
+          "earned_at": "2026-10-29T00:00:00-04:00",
+          "raw_earned": "Oct 29, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000005/badges/106"
+        },
+        {
+          "id": "badge-8",
+          "title": "Build Infrastructure with Terraform on Google Cloud",
+          "earned_at": "2026-10-31T00:00:00-04:00",
+          "raw_earned": "Oct 31, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000005/badges/107"
+        }
+      ],
+      "total_badges": 8,
+      "counted_badges": 8,
+      "last_badge_date": "2026-10-31",
+      "last_badge_earned_at": "2026-10-31T00:00:00-04:00",
+      "fetched_at": "2026-11-10T00:00:00-05:00"
+    },
+    {
+      "student": {
+        "profile_url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000006",
+        "uuid": "11111111-aaaa-bbbb-cccc-000000000006",
+        "name": "Talon Mercer",
+        "row_number": 7
+      },
+      "status": "in_progress",
+      "display_name": "Talon Mercer",
+      "league": "Gold League",
+      "points": 180,
+      "badges": [
+        {
+          "id": "badge-1",
+          "title": "Deploy Kubernetes Applications on Google Cloud",
+          "earned_at": "2026-10-18T00:00:00-04:00",
+          "raw_earned": "Oct 18, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000006/badges/100"
+        },
+        {
+          "id": "badge-2",
+          "title": "Build a Secure Google Cloud Network",
+          "earned_at": "2026-10-20T00:00:00-04:00",
+          "raw_earned": "Oct 20, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000006/badges/101"
+        },
+        {
+          "id": "badge-3",
+          "title": "Set Up and Configure a Cloud Environment in Google Cloud",
+          "earned_at": "2026-10-22T00:00:00-04:00",
+          "raw_earned": "Oct 22, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000006/badges/102"
+        },
+        {
+          "id": "badge-4",
+          "title": "Perform Foundational Infrastructure Tasks in Google Cloud",
+          "earned_at": "2026-10-24T00:00:00-04:00",
+          "raw_earned": "Oct 24, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000006/badges/103"
+        },
+        {
+          "id": "badge-5",
+          "title": "Create and Manage Cloud Spanner Instances",
+          "earned_at": "2026-10-26T00:00:00-04:00",
+          "raw_earned": "Oct 26, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000006/badges/104"
+        },
+        {
+          "id": "badge-6",
+          "title": "Engineer Data for Predictive Modeling with BigQuery ML",
+          "earned_at": "2026-10-28T00:00:00-04:00",
+          "raw_earned": "Oct 28, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000006/badges/105"
+        }
+      ],
+      "total_badges": 6,
+      "counted_badges": 6,
+      "last_badge_date": "2026-10-28",
+      "last_badge_earned_at": "2026-10-28T00:00:00-04:00",
+      "fetched_at": "2026-11-10T00:00:00-05:00"
+    },
+    {
+      "student": {
+        "profile_url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000007",
+        "uuid": "11111111-aaaa-bbbb-cccc-000000000007",
+        "name": "Vesper Rowe",
+        "row_number": 8
+      },
+      "status": "in_progress",
+      "display_name": "Vesper Rowe",
+      "league": "Gold League",
+      "points": 150,
+      "badges": [
+        {
+          "id": "badge-1",
+          "title": "Deploy Kubernetes Applications on Google Cloud",
+          "earned_at": "2026-10-16T00:00:00-04:00",
+          "raw_earned": "Oct 16, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000007/badges/100"
+        },
+        {
+          "id": "badge-2",
+          "title": "Build a Secure Google Cloud Network",
+          "earned_at": "2026-10-18T00:00:00-04:00",
+          "raw_earned": "Oct 18, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000007/badges/101"
+        },
+        {
+          "id": "badge-3",
+          "title": "Set Up and Configure a Cloud Environment in Google Cloud",
+          "earned_at": "2026-10-20T00:00:00-04:00",
+          "raw_earned": "Oct 20, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000007/badges/102"
+        },
+        {
+          "id": "badge-4",
+          "title": "Perform Foundational Infrastructure Tasks in Google Cloud",
+          "earned_at": "2026-10-22T00:00:00-04:00",
+          "raw_earned": "Oct 22, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000007/badges/103"
+        },
+        {
+          "id": "badge-5",
+          "title": "Create and Manage Cloud Spanner Instances",
+          "earned_at": "2026-10-24T00:00:00-04:00",
+          "raw_earned": "Oct 24, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000007/badges/104"
+        }
+      ],
+      "total_badges": 5,
+      "counted_badges": 5,
+      "last_badge_date": "2026-10-24",
+      "last_badge_earned_at": "2026-10-24T00:00:00-04:00",
+      "fetched_at": "2026-11-10T00:00:00-05:00"
+    },
+    {
+      "student": {
+        "profile_url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000008",
+        "uuid": "11111111-aaaa-bbbb-cccc-000000000008",
+        "name": "Cassian Vane",
+        "row_number": 9
+      },
+      "status": "in_progress",
+      "display_name": "Cassian Vane",
+      "league": "Gold League",
+      "points": 90,
+      "badges": [
+        {
+          "id": "badge-1",
+          "title": "Deploy Kubernetes Applications on Google Cloud",
+          "earned_at": "2026-10-17T00:00:00-04:00",
+          "raw_earned": "Oct 17, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000008/badges/100"
+        },
+        {
+          "id": "badge-2",
+          "title": "Build a Secure Google Cloud Network",
+          "earned_at": "2026-10-19T00:00:00-04:00",
+          "raw_earned": "Oct 19, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000008/badges/101"
+        },
+        {
+          "id": "badge-3",
+          "title": "Set Up and Configure a Cloud Environment in Google Cloud",
+          "earned_at": "2026-10-21T00:00:00-04:00",
+          "raw_earned": "Oct 21, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000008/badges/102"
+        }
+      ],
+      "total_badges": 3,
+      "counted_badges": 3,
+      "last_badge_date": "2026-10-21",
+      "last_badge_earned_at": "2026-10-21T00:00:00-04:00",
+      "fetched_at": "2026-11-10T00:00:00-05:00"
+    },
+    {
+      "student": {
+        "profile_url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000009",
+        "uuid": "11111111-aaaa-bbbb-cccc-000000000009",
+        "name": "Sonya Vale",
+        "row_number": 10
+      },
+      "status": "in_progress",
+      "display_name": "Sonya Vale",
+      "league": "Gold League",
+      "points": 30,
+      "badges": [
+        {
+          "id": "badge-1",
+          "title": "Deploy Kubernetes Applications on Google Cloud",
+          "earned_at": "2026-10-18T00:00:00-04:00",
+          "raw_earned": "Oct 18, 2026 EST",
+          "url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000009/badges/100"
+        }
+      ],
+      "total_badges": 1,
+      "counted_badges": 1,
+      "last_badge_date": "2026-10-18",
+      "last_badge_earned_at": "2026-10-18T00:00:00-04:00",
+      "fetched_at": "2026-11-10T00:00:00-05:00"
+    },
+    {
+      "student": {
+        "profile_url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000010",
+        "uuid": "11111111-aaaa-bbbb-cccc-000000000010",
+        "name": "Jaxen Cross",
+        "row_number": 11
+      },
+      "status": "no_badges",
+      "display_name": "Jaxen Cross",
+      "league": "Gold League",
+      "total_badges": 0,
+      "counted_badges": 0,
+      "fetched_at": "2026-11-10T00:00:00-05:00"
+    },
+    {
+      "student": {
+        "profile_url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000011",
+        "uuid": "11111111-aaaa-bbbb-cccc-000000000011",
+        "name": "Rylan Solis",
+        "row_number": 12
+      },
+      "status": "no_badges",
+      "display_name": "Rylan Solis",
+      "league": "Gold League",
+      "total_badges": 0,
+      "counted_badges": 0,
+      "fetched_at": "2026-11-10T00:00:00-05:00"
+    },
+    {
+      "student": {
+        "profile_url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000012",
+        "uuid": "11111111-aaaa-bbbb-cccc-000000000012",
+        "name": "Kaelen Frost",
+        "row_number": 13
+      },
+      "status": "private_or_not_found",
+      "display_name": "Kaelen Frost",
+      "league": "Gold League",
+      "total_badges": 0,
+      "counted_badges": 0,
+      "error": "profile is set to private or return 404",
+      "fetched_at": "2026-11-10T00:00:00-05:00"
+    },
+    {
+      "student": {
+        "profile_url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000013",
+        "uuid": "11111111-aaaa-bbbb-cccc-000000000013",
+        "name": "Thalia Voss",
+        "row_number": 14
+      },
+      "status": "private_or_not_found",
+      "display_name": "Thalia Voss",
+      "league": "Gold League",
+      "total_badges": 0,
+      "counted_badges": 0,
+      "error": "profile is set to private or return 404",
+      "fetched_at": "2026-11-10T00:00:00-05:00"
+    },
+    {
+      "student": {
+        "profile_url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000014",
+        "uuid": "11111111-aaaa-bbbb-cccc-000000000014",
+        "name": "Brecken Hale",
+        "row_number": 15
+      },
+      "status": "network_error",
+      "display_name": "Brecken Hale",
+      "league": "Gold League",
+      "total_badges": 0,
+      "counted_badges": 0,
+      "error": "network timeout dialing skills.google",
+      "fetched_at": "2026-11-10T00:00:00-05:00"
+    },
+    {
+      "student": {
+        "profile_url": "https://www.skills.google/public_profiles/11111111-aaaa-bbbb-cccc-000000000015",
+        "uuid": "11111111-aaaa-bbbb-cccc-000000000015",
+        "name": "Silas Novak",
+        "row_number": 16
+      },
+      "status": "rate_limited",
+      "display_name": "Silas Novak",
+      "league": "Gold League",
+      "total_badges": 0,
+      "counted_badges": 0,
+      "error": "HTTP 429: rate limit exceeded",
+      "fetched_at": "2026-11-10T00:00:00-05:00"
+    }
+  ]
+}

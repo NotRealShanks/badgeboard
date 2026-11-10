@@ -1,0 +1,63 @@
+# ==============================================================================
+# REAL ROSTER SYNC WORKFLOW (DISABLED BY DEFAULT)
+#
+# IMPORTANT: Publishing real participant progress data to a public dashboard
+# requires explicit written permission from the GDG campaign organizers.
+#
+# This workflow is strictly disabled by default. To enable:
+# 1. Rename this file by removing the `.disabled` suffix.
+# 2. Configure repository variable: ENABLE_REAL_ROSTER_SYNC=true
+# 3. Add encrypted repository secret: BADGEBOARD_SALT (HMAC salt)
+# 4. Add encrypted repository secret: REAL_ROSTER_CSV (roster contents)
+# ==============================================================================
+
+name: Sync Real Campaign Roster
+
+on:
+  workflow_dispatch:
+    inputs:
+      goal:
+        description: 'Badge target goal'
+        required: true
+        default: '10'
+
+jobs:
+  sync:
+    if: vars.ENABLE_REAL_ROSTER_SYNC == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Build Badgeboard CLI
+        run: go build -o bin/badgeboard ./cmd/badgeboard
+
+      - name: Write Roster Securely
+        run: |
+          echo "${{ secrets.REAL_ROSTER_CSV }}" > /tmp/roster.csv
+          chmod 600 /tmp/roster.csv
+
+      - name: Evaluate Roster and Anonymize
+        env:
+          BADGEBOARD_SALT: ${{ secrets.BADGEBOARD_SALT }}
+        run: |
+          ./bin/badgeboard run /tmp/roster.csv \
+            --anonymize \
+            --format json \
+            --goal ${{ github.event.inputs.goal }} \
+            > docs/data/results.json
+          rm -f /tmp/roster.csv
+
+      - name: Commit and Push Anonymized Dashboard Data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/data/results.json
+          git commit -m "chore(data): update anonymized public results [skip ci]" || echo "No changes to commit"
+          git push

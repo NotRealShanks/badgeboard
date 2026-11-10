@@ -1,12 +1,15 @@
 package export
 
 import (
+	"bytes"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/csv"
-	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -20,7 +23,46 @@ var (
 	uuidRegex  = regexp.MustCompile(`(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
 	urlRegex   = regexp.MustCompile(`(?i)https?://[^\s"'<>]+`)
 	emailRegex = regexp.MustCompile(`(?i)[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`)
+
+	// DemoSalt is the fixed HMAC key used for reproducible demo and testing data.
+	DemoSalt = []byte("badgeboard-demo-salt-fixed-reproducible-key-2026")
 )
+
+// ResolveSalt retrieves the HMAC salt from saltFile, demoSalt flag, or BADGEBOARD_SALT environment variable.
+// If anonymization is active and no salt is available, it returns an error refusing execution.
+func ResolveSalt(saltFile string, demoSalt bool) ([]byte, error) {
+	if demoSalt {
+		return DemoSalt, nil
+	}
+	if saltFile != "" {
+		data, err := os.ReadFile(saltFile)
+		if err != nil {
+			return nil, fmt.Errorf("reading salt file %q: %w", saltFile, err)
+		}
+		trimmed := bytes.TrimSpace(data)
+		if len(trimmed) == 0 {
+			return nil, fmt.Errorf("salt file %q is empty", saltFile)
+		}
+		return trimmed, nil
+	}
+	if envSalt := strings.TrimSpace(os.Getenv("BADGEBOARD_SALT")); envSalt != "" {
+		return []byte(envSalt), nil
+	}
+	return nil, errors.New("anonymization requires a secret salt: set BADGEBOARD_SALT environment variable, pass --salt-file, or pass --demo-salt for demo/testing")
+}
+
+// DerivePseudonym derives an irreversible pseudonym in the format "Learner-XXXX"
+// from an identifier (such as a UUID) using HMAC-SHA256 keyed with a secret salt.
+func DerivePseudonym(id string, salt []byte) string {
+	if len(salt) == 0 {
+		salt = DemoSalt
+	}
+	clean := strings.ToLower(strings.TrimSpace(id))
+	mac := hmac.New(sha256.New, salt)
+	mac.Write([]byte(clean))
+	sum := mac.Sum(nil)
+	return fmt.Sprintf("Learner-%04X", sum[:2])
+}
 
 // ScrubText removes URLs, UUIDs, emails, and names from text (such as error messages).
 func ScrubText(text string, names ...string) string {
@@ -65,8 +107,10 @@ func ComputeSummary(results []model.ProfileResult, goal int, anonymized bool) Su
 		goal = 10
 	}
 
+	genAt := time.Now().UTC().Truncate(time.Hour)
+
 	summary := Summary{
-		GeneratedAt:   time.Now().UTC(),
+		GeneratedAt:   genAt,
 		Goal:          goal,
 		TotalStudents: len(results),
 		Anonymized:    anonymized,
@@ -92,7 +136,7 @@ func ComputeSummary(results []model.ProfileResult, goal int, anonymized bool) Su
 
 // AnonymizeResult produces a privacy-preserving copy of a ProfileResult.
 // In anonymized mode:
-// - Roster name is replaced with initials + short 4-char UUID suffix
+// - Roster name is replaced with "Learner-XXXX" derived via HMAC-SHA256 of UUID with a secret salt
 // - Display name is replaced with the same anonymized pseudonym
 // - Email is scrubbed
 // - Profile URL and full UUID are scrubbed
@@ -100,23 +144,22 @@ func ComputeSummary(results []model.ProfileResult, goal int, anonymized bool) Su
 // - In Public mode (default without includeBadges): badge list, per-badge dates, badge titles,
 //   badge URLs, league, points, and full-precision timestamps are omitted.
 // - In Full Anonymized mode (with includeBadges): badge titles and dates are retained, but URLs are dropped.
-func AnonymizeResult(r model.ProfileResult, includeBadges ...bool) model.ProfileResult {
+func AnonymizeResult(r model.ProfileResult, salt []byte, includeBadges ...bool) model.ProfileResult {
 	withBadges := len(includeBadges) > 0 && includeBadges[0]
 	copyRes := r
 
-	sourceName := r.Student.Name
-	if sourceName == "" {
-		sourceName = r.DisplayName
+	targetID := r.Student.UUID
+	if targetID == "" {
+		targetID = r.Student.ProfileURL
+	}
+	if targetID == "" {
+		targetID = r.Student.Name
+	}
+	if targetID == "" {
+		targetID = r.DisplayName
 	}
 
-	var anonName string
-	if strings.HasPrefix(sourceName, "Profile (") && strings.HasSuffix(sourceName, "…)") {
-		anonName = sourceName
-	} else if sourceName == "" {
-		anonName = model.FallbackProfileLabel(r.Student.UUID)
-	} else {
-		anonName = AnonymizeName(sourceName, r.Student.UUID)
-	}
+	anonName := DerivePseudonym(targetID, salt)
 
 	copyRes.Student.Name = anonName
 	copyRes.Student.ProfileURL = ""
@@ -163,39 +206,6 @@ func AnonymizeResult(r model.ProfileResult, includeBadges ...bool) model.Profile
 	return copyRes
 }
 
-// AnonymizeName produces deterministic initials or short pseudonyms with a 4-char suffix.
-// E.g. "Alice Johnson" with UUID "...ddd7" -> "A. J. (ddd7)".
-func AnonymizeName(name, uuid string) string {
-	uuidSuffix := ""
-	cleanUUID := strings.TrimSpace(uuid)
-	if len(cleanUUID) >= 4 {
-		uuidSuffix = cleanUUID[len(cleanUUID)-4:]
-	} else if cleanUUID != "" {
-		uuidSuffix = cleanUUID
-	} else {
-		hash := sha256.Sum256([]byte(name))
-		uuidSuffix = hex.EncodeToString(hash[:])[:4]
-	}
-
-	trimmedName := strings.TrimSpace(name)
-	if trimmedName == "" {
-		return fmt.Sprintf("Participant (%s)", uuidSuffix)
-	}
-
-	parts := strings.Fields(trimmedName)
-	if len(parts) == 1 {
-		return fmt.Sprintf("%c. (%s)", parts[0][0], uuidSuffix)
-	}
-
-	initials := make([]string, len(parts))
-	for i, p := range parts {
-		if len(p) > 0 {
-			initials[i] = string(p[0]) + "."
-		}
-	}
-	return fmt.Sprintf("%s (%s)", strings.Join(initials, " "), uuidSuffix)
-}
-
 // sanitizeCSVField neutralizes formula injection in spreadsheets.
 // Cells beginning with '=', '+', '-', '@', '\t', or '\r' are prefixed with a single quote.
 func sanitizeCSVField(s string) string {
@@ -211,20 +221,20 @@ func sanitizeCSVField(s string) string {
 }
 
 // JSON exports results and summary as formatted JSON to w.
-func JSON(w io.Writer, results []model.ProfileResult, goal int, anonymize bool, includeBadges ...bool) error {
+func JSON(w io.Writer, results []model.ProfileResult, goal int, anonymize bool, salt []byte, includeBadges ...bool) error {
 	withBadges := len(includeBadges) > 0 && includeBadges[0]
-	return JSONWithBadRows(w, results, nil, goal, anonymize, withBadges)
+	return JSONWithBadRows(w, results, nil, goal, anonymize, salt, withBadges)
 }
 
 // JSONWithBadRows exports results, summary, and bad-rows report as formatted JSON to w.
 // In anonymized mode, the bad-rows report is dropped to prevent data leakage of raw input URLs/names.
-func JSONWithBadRows(w io.Writer, results []model.ProfileResult, badRows []roster.BadRowReport, goal int, anonymize bool, includeBadges ...bool) error {
+func JSONWithBadRows(w io.Writer, results []model.ProfileResult, badRows []roster.BadRowReport, goal int, anonymize bool, salt []byte, includeBadges ...bool) error {
 	withBadges := len(includeBadges) > 0 && includeBadges[0]
 	exportResults := results
 	if anonymize {
 		exportResults = make([]model.ProfileResult, len(results))
 		for i, r := range results {
-			exportResults[i] = AnonymizeResult(r, withBadges)
+			exportResults[i] = AnonymizeResult(r, salt, withBadges)
 		}
 	}
 
@@ -248,7 +258,7 @@ func JSONWithBadRows(w io.Writer, results []model.ProfileResult, badRows []roste
 }
 
 // CSV exports results in tabular CSV format to w.
-func CSV(w io.Writer, results []model.ProfileResult, goal int, anonymize bool) error {
+func CSV(w io.Writer, results []model.ProfileResult, goal int, anonymize bool, salt []byte) error {
 	writer := csv.NewWriter(w)
 	defer writer.Flush()
 
@@ -289,7 +299,7 @@ func CSV(w io.Writer, results []model.ProfileResult, goal int, anonymize bool) e
 	for _, r := range results {
 		res := r
 		if anonymize {
-			res = AnonymizeResult(r, false)
+			res = AnonymizeResult(r, salt, false)
 		}
 
 		lastDate := res.LastBadgeDate

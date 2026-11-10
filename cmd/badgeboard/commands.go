@@ -50,6 +50,8 @@ var (
 	flagNoCache       bool
 	flagAnonymize     bool
 	flagIncludeBadges bool
+	flagSaltFile      string
+	flagDemoSalt      bool
 	flagVerbose       bool
 	flagNoColor    bool
 	flagRunFormat    string
@@ -141,6 +143,8 @@ func newRootCmd() *cobra.Command {
 	rootCmd.PersistentFlags().BoolVar(&flagRefresh, "refresh", false, "Bypass disk cache and re-fetch from upstream")
 	rootCmd.PersistentFlags().BoolVar(&flagNoCache, "no-cache", false, "Disable on-disk cache (neither read nor write cache)")
 	rootCmd.PersistentFlags().BoolVar(&flagAnonymize, "anonymize", false, "Pseudonymize participant names and mask PII for public output")
+	rootCmd.PersistentFlags().StringVar(&flagSaltFile, "salt-file", "", "Path to file containing secret HMAC salt for anonymization")
+	rootCmd.PersistentFlags().BoolVar(&flagDemoSalt, "demo-salt", false, "Use non-secret fixed demo salt for testing or demo generation")
 	rootCmd.PersistentFlags().BoolVarP(&flagVerbose, "verbose", "v", false, "Print verbose diagnostic logs")
 	rootCmd.PersistentFlags().BoolVar(&flagNoColor, "no-color", false, "Disable colorized terminal output (respects NO_COLOR)")
 
@@ -248,11 +252,22 @@ func newRunCmd() *cobra.Command {
 				}
 			}
 
+			// Resolve anonymization salt if requested
+			var salt []byte
+			if flagAnonymize {
+				var err error
+				salt, err = export.ResolveSalt(flagSaltFile, flagDemoSalt)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+					os.Exit(ExitUsage)
+				}
+			}
+
 			// Format output if requested (JSON or CSV)
 			if strings.EqualFold(flagRunFormat, "json") {
-				return export.JSONWithBadRows(os.Stdout, results, rst.BadRows, cfg.Goal, flagAnonymize, flagIncludeBadges)
+				return export.JSONWithBadRows(os.Stdout, results, rst.BadRows, cfg.Goal, flagAnonymize, salt, flagIncludeBadges)
 			} else if strings.EqualFold(flagRunFormat, "csv") {
-				return export.CSV(os.Stdout, results, cfg.Goal, flagAnonymize)
+				return export.CSV(os.Stdout, results, cfg.Goal, flagAnonymize, salt)
 			}
 
 			// Render final Lip Gloss terminal table
@@ -417,11 +432,20 @@ func newExportCmd() *cobra.Command {
 				outWriter = f
 			}
 
+			var salt []byte
+			if flagAnonymize {
+				var err error
+				salt, err = export.ResolveSalt(flagSaltFile, flagDemoSalt)
+				if err != nil {
+					return err
+				}
+			}
+
 			var exportErr error
 			if strings.EqualFold(flagExportFormat, "csv") {
-				exportErr = export.CSV(outWriter, results, cfg.Goal, flagAnonymize)
+				exportErr = export.CSV(outWriter, results, cfg.Goal, flagAnonymize, salt)
 			} else {
-				exportErr = export.JSONWithBadRows(outWriter, results, rst.BadRows, cfg.Goal, flagAnonymize, flagIncludeBadges)
+				exportErr = export.JSONWithBadRows(outWriter, results, rst.BadRows, cfg.Goal, flagAnonymize, salt, flagIncludeBadges)
 			}
 			if exportErr != nil {
 				return exportErr
@@ -503,7 +527,7 @@ func newDemoCmd() *cobra.Command {
 					defer f.Close()
 					outWriter = f
 				}
-				return export.JSONWithBadRows(outWriter, results, nil, goal, flagAnonymize, flagIncludeBadges)
+				return export.JSONWithBadRows(outWriter, results, nil, goal, flagAnonymize, export.DemoSalt, flagIncludeBadges)
 
 			case "csv":
 				outWriter := os.Stdout
@@ -518,7 +542,7 @@ func newDemoCmd() *cobra.Command {
 					defer f.Close()
 					outWriter = f
 				}
-				return export.CSV(outWriter, results, goal, flagAnonymize)
+				return export.CSV(outWriter, results, goal, flagAnonymize, export.DemoSalt)
 
 			case "text":
 				outPath := flagOut
@@ -534,7 +558,7 @@ func newDemoCmd() *cobra.Command {
 				}
 				defer f.Close()
 
-				if err := export.JSONWithBadRows(f, results, nil, goal, flagAnonymize, flagIncludeBadges); err != nil {
+				if err := export.JSONWithBadRows(f, results, nil, goal, flagAnonymize, export.DemoSalt, flagIncludeBadges); err != nil {
 					return fmt.Errorf("writing demo data: %w", err)
 				}
 

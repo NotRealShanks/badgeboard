@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self';">
   <meta name="description" content="Google Skills Badgeboard - Real-time campaign tracking dashboard for Google Developer Groups.">
   <title>Google Skills Badgeboard | GDG Campaign Tracker</title>
   <link rel="stylesheet" href="style.css">
@@ -21,12 +21,20 @@
           </div>
           <div class="brand-text">
             <h1 class="brand-title">Google Skills Badgeboard</h1>
-            <p class="brand-subtitle">Learn With Communities Campaign</p>
+            <div class="brand-meta">
+              <span class="brand-subtitle">Learn With Communities Campaign</span>
+              <span class="meta-separator" aria-hidden="true">•</span>
+              <span id="lastUpdated" class="last-updated">Loading timestamp...</span>
+            </div>
           </div>
         </div>
         <div class="header-actions">
-          <button id="themeToggle" class="btn-theme-toggle" type="button" aria-label="Toggle dark/light theme">
-            <span class="theme-icon" id="themeIcon" aria-hidden="true">🌙</span>
+          <button id="themeToggle" class="btn-theme-toggle" type="button" aria-label="Toggle dark and light theme">
+            <span class="theme-icon" id="themeIcon" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+              </svg>
+            </span>
             <span class="theme-text" id="themeLabel">Dark</span>
           </button>
         </div>
@@ -37,7 +45,7 @@
       <!-- Summary / KPI Cards -->
       <section class="kpi-section" aria-label="Campaign Overview">
         <div class="kpi-grid">
-          <div class="kpi-card">
+          <div class="kpi-card kpi-total">
             <span class="kpi-label">Total Participants</span>
             <span class="kpi-value" id="kpiTotal">-</span>
             <span class="kpi-subtext" id="kpiGoalSubtext">Target: 10 badges</span>
@@ -69,34 +77,49 @@
       <section class="toolbar-section" aria-label="Filter and Search Controls">
         <div class="toolbar-wrapper">
           <div class="search-box">
-            <span class="search-icon" aria-hidden="true">🔍</span>
-            <input type="text" id="searchInput" class="search-input" placeholder="Search learner by name..." aria-label="Search learner by name">
+            <span class="search-icon" aria-hidden="true">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+            </span>
+            <input type="text" id="searchInput" class="search-input" placeholder="Search learner by name or pseudonym..." aria-label="Search learner by name or pseudonym">
             <button type="button" id="searchClear" class="btn-clear-search hidden" aria-label="Clear search">✕</button>
           </div>
 
           <div class="filters-row">
             <div class="status-filters" id="statusFilterGroup" role="radiogroup" aria-label="Filter by status">
-              <button type="button" class="filter-pill active" data-status="all" role="radio" aria-checked="true">All</button>
-              <button type="button" class="filter-pill" data-status="complete" role="radio" aria-checked="false">Completed</button>
-              <button type="button" class="filter-pill" data-status="in_progress" role="radio" aria-checked="false">In Progress</button>
-              <button type="button" class="filter-pill" data-status="no_badges" role="radio" aria-checked="false">No Badges</button>
-              <button type="button" class="filter-pill" data-status="unavailable" role="radio" aria-checked="false">Unavailable</button>
+              <button type="button" class="filter-pill active" data-status="all" role="radio" aria-checked="true" tabindex="0">All</button>
+              <button type="button" class="filter-pill" data-status="complete" role="radio" aria-checked="false" tabindex="0">Completed</button>
+              <button type="button" class="filter-pill" data-status="in_progress" role="radio" aria-checked="false" tabindex="0">In Progress</button>
+              <button type="button" class="filter-pill" data-status="no_badges" role="radio" aria-checked="false" tabindex="0">No Badges</button>
+              <button type="button" class="filter-pill" data-status="unavailable" role="radio" aria-checked="false" tabindex="0">Unavailable</button>
             </div>
 
-            <div class="sort-control">
-              <label for="sortSelect" class="sort-label">Sort:</label>
-              <select id="sortSelect" class="sort-select" aria-label="Sort participants">
-                <option value="badges-desc">Most Badges</option>
-                <option value="badges-asc">Least Badges</option>
-                <option value="name-asc">Name (A–Z)</option>
-                <option value="date-desc">Recently Active</option>
-              </select>
+            <div class="toolbar-actions">
+              <div class="sort-control">
+                <label for="sortSelect" class="sort-label">Sort:</label>
+                <select id="sortSelect" class="sort-select" aria-label="Sort participants">
+                  <option value="badges-desc">Most Badges</option>
+                  <option value="badges-asc">Least Badges</option>
+                  <option value="name-asc">Name (A–Z)</option>
+                  <option value="date-desc">Recently Active</option>
+                </select>
+              </div>
+              <button type="button" id="btnExportCSV" class="btn-export">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                <span>Export CSV</span>
+              </button>
             </div>
           </div>
         </div>
 
         <div class="results-meta">
-          <span id="resultsCount" class="results-count">Loading participants...</span>
+          <span id="resultsCount" class="results-count" aria-live="polite">Loading participants...</span>
           <span id="tierBadge" class="tier-indicator">Full View</span>
         </div>
       </section>
@@ -112,8 +135,6 @@
     <footer class="app-footer">
       <div class="footer-content">
         <p class="footer-text">
-          <span id="lastUpdated">Updated: Just now</span>
-          <span class="footer-dot">•</span>
           <span>Google Developer Groups • Learn With Communities</span>
         </p>
       </div>

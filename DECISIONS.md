@@ -103,3 +103,24 @@ This document records the core architectural decisions, design choices, and trad
   - Single static binary distribution without runtime dependencies (Python, Node, Docker).
   - First-class concurrency (`sync`, channels, worker pools) for high-performance polite scraping.
   - Robust standard library for networking, testing, and HTTP mocking (`httptest`).
+
+---
+
+## 14. Irreversible Pseudonym Derivation via Secret-Salted HMAC-SHA256
+- **Context**: Reversible pseudonyms or naive truncation (such as `"A. J. (ddd7)"`) leak quasi-identifiers: learner initials combined with the last 4 characters of the raw UUID permit an adversary with access to a public Google Skills directory or social shares to easily deanonymize participants.
+- **Decision**: `badgeboard` generates pseudonyms strictly in the format `Learner-XXXX` using `HMAC-SHA256` keyed with an out-of-band secret salt:
+  $$\text{HMAC-SHA256}_{K}(\text{lowercase(uuid)})$$
+  The first two bytes (16 bits) are truncated to four uppercase hexadecimal characters.
+- **Enforcement**:
+  - The CLI refuses to execute `--anonymize` unless a secret salt is supplied via the `BADGEBOARD_SALT` environment variable or `--salt-file <path>`.
+  - For testing and reproducible demo builds, `--demo-salt` must be explicitly passed.
+  - The salt is strictly kept out of version control and git history.
+  - Different salts produce entirely non-overlapping pseudonyms for the same input UUID, preventing correlation across cohorts or events.
+
+---
+
+## 15. Public Deployment Policy & Real Roster Governance
+- **Decision**: The public GitHub Pages site deployed from `docs/` serves synthetic demo data generated via `badgeboard demo` exclusively.
+- **Organizer Authorization Requirement**:
+  - Publishing real participant progress data to any public or web-facing medium requires explicit written permission from the GDG campaign organizers.
+  - Any CI/CD workflow capable of reading and processing real participant rosters must remain **disabled by default**, restricted to manual `workflow_dispatch`, and guarded by repository variables (`ENABLE_REAL_ROSTER_SYNC == 'true'`) and encrypted repository secrets (`REAL_ROSTER_CSV`, `BADGEBOARD_SALT`).

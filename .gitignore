@@ -26,14 +26,15 @@ scratch/
 *.scratch
 
 # Local data & rosters
-data/
+/data/
 
 # Ignore all CSV and JSON everywhere
 *.csv
 *.json
-# Allow only testdata fixtures
+# Allow only testdata fixtures and demo data in docs/
 !testdata/*.csv
 !testdata/*.json
+!docs/data/*.json
 
 # Local configs
 *.local.toml
