@@ -2,12 +2,11 @@
 
 [![CI](https://github.com/NotRealShanks/badgeboard/actions/workflows/ci.yml/badge.svg)](https://github.com/NotRealShanks/badgeboard/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Live Demo](https://img.shields.io/badge/demo-interactive%20scoreboard-orange.svg)](https://notrealshanks.github.io/badgeboard/)
 
-badgeboard is a resilient, privacy-first command-line progress tracker and static web dashboard for the Google Developer Groups (GDG) Learn With Communities campaign.
+badgeboard is a resilient, privacy-first command-line progress tracker and dynamic web application for the Google Developer Groups (GDG) Learn With Communities campaign.
 
-![Terminal Interface](docs/assets/terminal.png)
-
-![Web Dashboard](docs/assets/dashboard.png)
+**Live Interactive Demo**: [https://notrealshanks.github.io/badgeboard/](https://notrealshanks.github.io/badgeboard/)
 
 ---
 
@@ -16,44 +15,47 @@ badgeboard is a resilient, privacy-first command-line progress tracker and stati
 ```mermaid
 flowchart TD
     subgraph Input ["Input Layer"]
-        CSV["Roster CSV\n(Google Skills Profile URL)"]
+        CSV["Roster CSV\n(Upload or File Path)"]
+        PASTE["Pasted Profile URLs\n(One URL per line)"]
+        SHEET["Google Sheet Link\n(Published CSV URL with SSRF Guard)"]
         CFG["Config File\n(badgeboard.toml)"]
-        CLI_FLAGS["CLI Arguments & Flags"]
     end
 
-    subgraph Core ["badgeboard Core Engine"]
-        CLI["CLI Entrypoint\n(Cobra Commands)"]
+    subgraph Core ["badgeboard Engine & Server"]
+        CLI["CLI Commands\n(run, check, demo, serve)"]
+        SRV["Web Server\n(net/http Go 1.22 Routing + Security Middleware)"]
+        STORE["In-Memory Run Store\n(Random 16B Hex IDs + TTL Janitor)"]
+        SSE["SSE Broadcaster\n(run_started, row_result, progress, complete)"]
         ROSTER["Roster Reader\n(CSV/CRLF/BOM/Formula Guard)"]
-        TRACKER["Batch Tracker\n(Concurrent Worker Pool)"]
-        LIMITER["Adaptive Rate Limiter\n(Token Bucket + Backoff + Retry-After)"]
-        CACHE["Disk Cache\n(.badgeboard_cache, TTL Partitioned)"]
-        FETCHER["HTTP Fetcher\n(Redirect Guard + 2MB Cap)"]
-        PARSER["Profile Parser\n(HTML Tokenizer / Traversal)"]
+        LIMITER["Shared Outbound Limiter\n(Token Bucket + PauseUntil Cool-Down)"]
+        CACHE["Disk / In-Memory Cache\n(TTL Partitioned by Status)"]
+        FETCHER["HTTP Fetcher\n(SSRF Guard + 2MB Cap)"]
+        PARSER["Profile Parser\n(Structural Traversal + Date Normalizer)"]
     end
 
     subgraph Output ["Output & Presentation Layer"]
+        WEB_UI["Dynamic Web Dashboard\n(Editorial Ledger UI + Embedded Assets)"]
         TERM["Terminal UI\n(Progress Bars & Summary Table)"]
-        JSON_EXP["JSON Exporter\n(Public vs Full Tier)"]
-        CSV_EXP["CSV Exporter\n(Neutralized Formula Injection)"]
-        DASH["Static Dashboard\n(docs/ GitHub Pages, Zero Runtime Deps)"]
+        EXPORTS["Exports\n(Neutralized CSV, JSON, Self-Contained HTML Report)"]
     end
 
     CSV --> ROSTER
+    PASTE --> ROSTER
+    SHEET --> FETCHER
     CFG --> CLI
-    CLI_FLAGS --> CLI
-    CLI --> TRACKER
-    ROSTER --> TRACKER
-    TRACKER --> LIMITER
+    CLI --> SRV
+    SRV --> STORE
+    STORE --> SSE
+    SSE --> WEB_UI
+    ROSTER --> LIMITER
     LIMITER --> CACHE
     CACHE -->|Miss / Stale| FETCHER
-    CACHE -->|Hit| TRACKER
+    CACHE -->|Hit| STORE
     FETCHER --> PARSER
     PARSER --> CACHE
-    PARSER --> TRACKER
-    TRACKER --> TERM
-    TRACKER --> JSON_EXP
-    TRACKER --> CSV_EXP
-    JSON_EXP --> DASH
+    PARSER --> STORE
+    STORE --> EXPORTS
+    CLI --> TERM
 ```
 
 ---
@@ -92,26 +94,33 @@ go install ./cmd/badgeboard
 
 ## 60-Second Quickstart
 
-### 1. Generate Synthetic Demo Data
+### 1. Launch the Live Web Application & Dashboard
+Start the local web application server:
+```bash
+badgeboard serve
+```
+Open [http://127.0.0.1:8080](http://127.0.0.1:8080) in your browser. Upload a roster CSV, paste profile URLs, or provide a published Google Sheet CSV link to watch badge progress stream live via Server-Sent Events.
+
+### 2. Generate Synthetic Demo Data
 Generate a realistic 15-student cohort with varying completion rates and unavailable states:
 ```bash
 badgeboard demo
 ```
 Output is rendered directly to the terminal, and saved as a JSON data file for the web dashboard at `docs/data/results.json`.
 
-### 2. Inspect a Single Profile
+### 3. Inspect a Single Profile
 Check an individual learner's progress without requiring a CSV file:
 ```bash
 badgeboard check https://www.skills.google/public_profiles/11111111-2222-3333-4444-555555555555
 ```
 
-### 3. Track a Full Roster
+### 4. Track a Full Roster via CLI
 Evaluate a student roster CSV against a campaign target of 10 badges:
 ```bash
 badgeboard run students.csv --goal 10
 ```
 
-### 4. Export Anonymized Results for Public Publication
+### 5. Export Anonymized Results for Public Publication
 Generate public leaderboard data with irreversible pseudonyms:
 ```bash
 export BADGEBOARD_SALT="campaign-secret-salt-key-2026"
@@ -156,6 +165,16 @@ https://www.skills.google/public_profiles/22222222-3333-4444-5555-666666666666
 | `-v, --verbose` | `false` | Emit detailed diagnostic logs |
 
 ### Subcommands
+
+#### `badgeboard serve`
+Starts the HTTP web server and dynamic real-time dashboard. All frontend assets are compiled into the binary via `go:embed`.
+- `--addr string`: Server listening address (default: `127.0.0.1:8080`, honors Cloud Run `$PORT`).
+- `--hosted`: Enable hosted mode (stateless in-memory store, zero disk cache, stricter per-IP limits).
+- `--max-rows int`: Maximum roster rows permitted per run (default: `500`).
+- `--max-runs int`: Maximum concurrent active runs (default: `3`).
+- `--run-ttl duration`: In-memory run retention TTL (default: `30m0s`).
+- `--max-rps float`: Server-level ceiling for requests per second (default: `2.0`).
+- `--max-concurrency int`: Server-level ceiling for fetch workers (default: `4`).
 
 #### `badgeboard run <roster.csv>`
 Executes batch processing on a participant roster.
@@ -294,6 +313,7 @@ The codebase maintains comprehensive automated test coverage across all internal
 | `internal/cache` | 80.0% |
 | `internal/ui` | 73.7% |
 | `internal/model` | 60.7% |
+| `internal/web` | 55.8% |
 | `cmd/badgeboard` | 38.2% |
 
 ### Running Tests
@@ -305,8 +325,8 @@ go test -race -cover ./...
 TZ=UTC go test -race ./...
 TZ=Asia/Kolkata go test -race ./...
 
-# Run client-side formula neutralization tests
-node docs/csv_export.test.js
+# Run frontend unit tests (DOM and CSV neutralization)
+node --test internal/web/assets/frontend.test.js
 
 # Run static analysis
 golangci-lint run ./...
