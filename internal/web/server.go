@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net"
 	"net/http"
@@ -553,9 +554,228 @@ func (s *Server) handleExportReportHTML(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="badgeboard_%s_report.html"`, runID[:8]))
 
-	// Simple embedded HTML report generator matching report.js
-	fmt.Fprintf(w, `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Badgeboard Report - %s</title></head><body>`, runID[:8])
-	fmt.Fprintf(w, `<h1>Badgeboard Report</h1><p>Run ID: %s</p><p>Total: %d, Completed: %d</p></body></html>`, runID, run.Summary.TotalStudents, run.Summary.CompleteCount)
+	goal := run.Settings.Goal
+	if goal <= 0 {
+		goal = 10
+	}
+	isAnonymized := run.Settings.Anonymize
+
+	// Compute distribution
+	var d0, d1_3, d4_6, d7_9, d10 int
+	for _, res := range run.Results {
+		c := res.CountedBadges
+		switch {
+		case c == 0:
+			d0++
+		case c >= 1 && c <= 3:
+			d1_3++
+		case c >= 4 && c <= 6:
+			d4_6++
+		case c >= 7 && c <= 9:
+			d7_9++
+		case c >= goal:
+			d10++
+		}
+	}
+
+	totalStudents := run.Summary.TotalStudents
+	if totalStudents <= 0 {
+		totalStudents = len(run.Results) + len(run.Unreachable)
+	}
+
+	io.WriteString(w, `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Badgeboard Report</title>
+<style>
+  :root {
+    --bg: #F6F1E7;
+    --ink: #1A1814;
+    --muted: #635F57;
+    --border: #DDD6C9;
+    --accent: #BA3E18;
+    --card-bg: #FFFFFF;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14120F;
+      --ink: #EDE6D8;
+      --muted: #9E9689;
+      --border: #2A2621;
+      --accent: #E05A2B;
+      --card-bg: #1C1915;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.5;
+    padding: 32px 24px;
+    max-width: 960px;
+    margin: 0 auto;
+  }
+  header { border-bottom: 2px solid var(--border); padding-bottom: 20px; margin-bottom: 28px; }
+  h1 { font-size: 26px; font-weight: 700; margin-bottom: 4px; }
+  .subtitle { font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+  .summary-lead { font-size: 28px; font-weight: 700; line-height: 1.25; margin: 20px 0; color: var(--accent); }
+  .dist-strip { display: flex; gap: 8px; background: var(--card-bg); border: 1px solid var(--border); padding: 12px 16px; margin-bottom: 24px; }
+  .dist-item { flex: 1; text-align: center; }
+  .dist-val { font-size: 18px; font-weight: 700; font-family: monospace; }
+  .dist-lbl { font-size: 11px; text-transform: uppercase; color: var(--muted); }
+  .report-table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 13.5px; }
+  .report-table th, .report-table td { border-bottom: 1px solid var(--border); padding: 10px 12px; text-align: left; }
+  .report-table th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+  .seg-bar { display: inline-flex; gap: 3px; vertical-align: middle; }
+  .seg { display: inline-block; width: 9px; height: 14px; border: 1px solid var(--accent); }
+  .seg.filled { background: var(--accent); }
+  .seg.empty { background: transparent; opacity: 0.35; }
+  .check-sym { color: #1E8E3E; font-weight: bold; margin-left: 4px; }
+  .notice { font-size: 13px; font-style: italic; color: var(--muted); margin: 6px 0 12px; }
+  .unreachable-section { margin-top: 40px; }
+  footer { border-top: 1px solid var(--border); margin-top: 40px; padding-top: 16px; font-size: 12px; color: var(--muted); }
+  @media print {
+    body { background: #FFFFFF !important; color: #000000 !important; padding: 0; }
+    .seg.filled { background: #000000 !important; border-color: #000000 !important; }
+    .seg.empty { border-color: #999999 !important; }
+    .summary-lead { color: #000000 !important; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Google Skills Badgeboard</h1>`)
+	fmt.Fprintf(w, `<div class="subtitle">GDG Learn With Communities • Progress Report (%s)</div>
+  </header>
+  <main>
+    <div class="summary-lead">%d of %d learners have completed all %d badges.</div>
+    <div class="dist-strip">
+      <div class="dist-item"><div class="dist-val">%d</div><div class="dist-lbl">0 badges</div></div>
+      <div class="dist-item"><div class="dist-val">%d</div><div class="dist-lbl">1–3 badges</div></div>
+      <div class="dist-item"><div class="dist-val">%d</div><div class="dist-lbl">4–6 badges</div></div>
+      <div class="dist-item"><div class="dist-val">%d</div><div class="dist-lbl">7–9 badges</div></div>
+      <div class="dist-item"><div class="dist-val">%d</div><div class="dist-lbl">10 badges</div></div>
+    </div>
+    <table class="report-table">
+      <thead>
+        <tr>
+          <th>Learner</th>
+          <th>Progress</th>
+          <th>Count</th>
+          <th>Status</th>
+          <th>Last Earned</th>
+        </tr>
+      </thead>
+      <tbody>`, html.EscapeString(runID[:8]), run.Summary.CompleteCount, totalStudents, goal, d0, d1_3, d4_6, d7_9, d10)
+
+	for _, r := range run.Results {
+		name := r.DisplayName
+		if isAnonymized {
+			name = r.Pseudonym
+			if name == "" {
+				name = "Learner-XXXX"
+			}
+		}
+		if name == "" {
+			name = "Anonymous"
+		}
+
+		isComplete := r.Status == model.StatusComplete || r.CountedBadges >= goal
+		count := r.CountedBadges
+
+		var segs strings.Builder
+		for i := 0; i < 10; i++ {
+			if i < count {
+				segs.WriteString(`<span class="seg filled"></span>`)
+			} else {
+				segs.WriteString(`<span class="seg empty"></span>`)
+			}
+		}
+		checkmark := ""
+		if isComplete {
+			checkmark = `<span class="check-sym">✓</span>`
+		}
+
+		dateStr := "—"
+		if r.LastBadgeDate != "" {
+			dateStr = r.LastBadgeDate
+		}
+
+		statusSym := ">"
+		if isComplete {
+			statusSym = "✓"
+		}
+
+		fmt.Fprintf(w, `
+        <tr>
+          <td>%s</td>
+          <td><div class="seg-bar">%s</div>%s</td>
+          <td>%d/%d</td>
+          <td>[%s] %s</td>
+          <td>%s</td>
+        </tr>`,
+			html.EscapeString(name),
+			segs.String(),
+			checkmark,
+			count, goal,
+			statusSym, html.EscapeString(string(r.Status)),
+			html.EscapeString(dateStr),
+		)
+	}
+
+	fmt.Fprintf(w, `
+      </tbody>
+    </table>`)
+
+	if len(run.Unreachable) > 0 {
+		fmt.Fprintf(w, `
+    <section class="unreachable-section">
+      <h2>Couldn't be Checked (%d)</h2>
+      <p class="notice">These profiles could not be read. They are not counted as zero.</p>
+      <table class="report-table">
+        <thead>
+          <tr><th>Learner</th><th>Status Reason</th></tr>
+        </thead>
+        <tbody>`, len(run.Unreachable))
+
+		for _, u := range run.Unreachable {
+			name := u.DisplayName
+			if isAnonymized {
+				name = u.Pseudonym
+				if name == "" {
+					name = "Learner-XXXX"
+				}
+			}
+			if name == "" {
+				name = "Anonymous"
+			}
+			reason := u.Error
+			if reason == "" {
+				reason = string(u.Status)
+			}
+			fmt.Fprintf(w, `
+          <tr>
+            <td>%s</td>
+            <td>[!] %s</td>
+          </tr>`, html.EscapeString(name), html.EscapeString(reason))
+		}
+
+		fmt.Fprintf(w, `
+        </tbody>
+      </table>
+    </section>`)
+	}
+
+	fmt.Fprintf(w, `
+  </main>
+  <footer>
+    <p>How counting works: Any verified Google Skills badge counts towards campaign progress. The campaign completion goal is %d badges. Private profiles or network errors are marked as unread and are never counted as zero.</p>
+  </footer>
+</body>
+</html>`, goal)
 }
 
 // BuildServerTracker initializes the shared engine Tracker according to server flags.

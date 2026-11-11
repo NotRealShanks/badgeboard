@@ -347,3 +347,69 @@ func TestServer_SharedLimiter_Concurrency(t *testing.T) {
 		t.Errorf("concurrent run creation error: %v", err)
 	}
 }
+
+func TestServer_Exports(t *testing.T) {
+	s := setupTestServer(t, false, 50, 5)
+
+	run, err := s.store.CreateRun(RunSettings{Goal: 10, Anonymize: false}, 2)
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	run.mu.Lock()
+	run.Results = []model.ProfileResult{
+		{
+			Student:       model.Student{Name: "=cmd|' /C calc'!A0", UUID: "11111111-1111-1111-1111-111111111111", ProfileURL: "https://www.skills.google/public_profiles/11111111-1111-1111-1111-111111111111"},
+			DisplayName:   "=cmd|' /C calc'!A0",
+			Status:        model.StatusComplete,
+			CountedBadges: 10,
+			LastBadgeDate: "2026-11-05",
+		},
+	}
+	run.Unreachable = []model.ProfileResult{
+		{
+			Student:     model.Student{UUID: "22222222-2222-2222-2222-222222222222"},
+			DisplayName: "Unreachable User",
+			Status:      model.StatusNetworkError,
+			Error:       "Network timeout dialing skills.google",
+		},
+	}
+	run.Summary.CompleteCount = 1
+	run.Summary.TotalStudents = 2
+	run.mu.Unlock()
+
+	// 1. Test CSV Export with formula injection check
+	csvReq := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/runs/%s/export.csv", run.ID), nil)
+	csvRec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(csvRec, csvReq)
+	if csvRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from export.csv, got %d", csvRec.Code)
+	}
+	csvStr := csvRec.Body.String()
+	if !strings.Contains(csvStr, "'=cmd") {
+		t.Errorf("expected neutralized formula prefix in CSV export, got: %s", csvStr)
+	}
+
+	// 2. Test JSON Export
+	jsonReq := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/runs/%s/export.json", run.ID), nil)
+	jsonRec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(jsonRec, jsonReq)
+	if jsonRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from export.json, got %d", jsonRec.Code)
+	}
+
+	// 3. Test HTML Report Export
+	htmlReq := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/runs/%s/report.html", run.ID), nil)
+	htmlRec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(htmlRec, htmlReq)
+	if htmlRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from report.html, got %d", htmlRec.Code)
+	}
+	htmlStr := htmlRec.Body.String()
+	if !strings.Contains(htmlStr, "Badgeboard Report") || !strings.Contains(htmlStr, "seg-bar") {
+		t.Errorf("expected self-contained badgeboard report in HTML, got: %s", htmlStr)
+	}
+	if !strings.Contains(htmlStr, "Couldn't be Checked") {
+		t.Errorf("expected unreachable section in HTML report")
+	}
+}
