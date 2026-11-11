@@ -12,6 +12,7 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 const { spawn } = require('node:child_process');
 
 function findChromePath() {
@@ -23,12 +24,28 @@ function findChromePath() {
   }
   try {
     const { execSync } = require('node:child_process');
-    const which = execSync('which google-chrome || which google-chrome-stable || which chromium || which chromium-browser', {
+    const which = execSync('which google-chrome || which google-chrome-stable || which chromium || which chromium-browser || which chrome', {
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'ignore']
     }).trim();
     if (which && fs.existsSync(which)) return which;
   } catch {}
+
+  // Check PATH entries directly
+  if (process.env.PATH) {
+    const paths = process.env.PATH.split(path.delimiter);
+    const binaries = ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser', 'chrome', 'chrome.exe'];
+    for (const p of paths) {
+      for (const b of binaries) {
+        const full = path.join(p, b);
+        if (fs.existsSync(full)) {
+          try {
+            if (fs.statSync(full).isFile()) return full;
+          } catch {}
+        }
+      }
+    }
+  }
 
   const candidates = [
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
@@ -38,6 +55,7 @@ function findChromePath() {
     '/usr/bin/google-chrome-stable',
     '/usr/bin/chromium',
     '/usr/bin/chromium-browser',
+    '/usr/local/bin/chrome',
     '/snap/bin/chromium',
   ];
   for (const c of candidates) {
@@ -82,18 +100,42 @@ async function runChecks() {
   await new Promise(r => server.listen(PORT, '127.0.0.1', r));
   console.log(`[check_overflow] Assets server running at http://127.0.0.1:${PORT}`);
 
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chrome-chk-'));
   const chrome = spawn(chromePath, [
     '--headless=new',
     `--remote-debugging-port=${DEBUG_PORT}`,
+    '--remote-debugging-address=127.0.0.1',
+    `--user-data-dir=${tmpDir}`,
     '--no-sandbox',
     '--disable-setuid-sandbox',
     '--disable-dev-shm-usage',
     '--disable-gpu',
+    '--no-first-run',
+    '--no-default-browser-check',
     '--hide-scrollbars',
     'about:blank',
   ]);
 
-  await new Promise(r => setTimeout(r, 1500));
+  let chromeOutput = '';
+  chrome.stdout.on('data', d => { chromeOutput += d.toString(); });
+  chrome.stderr.on('data', d => { chromeOutput += d.toString(); });
+
+  let ready = false;
+  for (let i = 0; i < 30; i++) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${DEBUG_PORT}/json/version`);
+      if (res.ok) {
+        ready = true;
+        break;
+      }
+    } catch {}
+    await new Promise(r => setTimeout(r, 200));
+  }
+  if (!ready) {
+    try { chrome.kill(); } catch {}
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    throw new Error(`Chrome DevTools failed to become ready on port ${DEBUG_PORT} within 6s.\nOutput:\n${chromeOutput}`);
+  }
 
   const states = ['empty', 'streaming', 'complete', 'partial', 'error', 'huge'];
   const widths = [320, 360, 390, 768];
@@ -214,7 +256,12 @@ async function runChecks() {
   }
 
   // Teardown
-  chrome.kill();
+  try {
+    chrome.kill();
+  } catch {}
+  try {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  } catch {}
   server.close();
 
   console.log(`\n========================================`);
