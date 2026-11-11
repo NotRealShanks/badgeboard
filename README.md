@@ -8,6 +8,9 @@ badgeboard is a resilient, privacy-first command-line progress tracker and dynam
 
 **Live Interactive Demo**: [https://notrealshanks.github.io/badgeboard/](https://notrealshanks.github.io/badgeboard/)
 
+![Badgeboard Editorial Ledger Web Application](docs/assets/dashboard.png)
+*Figure 1: The editorial ledger web interface showing campaign progress summary, segmented distribution breakdown, and accessible 10-segment badge trackers.*
+
 ---
 
 ## Architecture Overview
@@ -108,6 +111,9 @@ badgeboard demo
 ```
 Output is rendered directly to the terminal, and saved as a JSON data file for the web dashboard at `docs/data/results.json`.
 
+![Badgeboard CLI Terminal Output](docs/assets/terminal.png)
+*Figure 2: Terminal UI rendered with polite progress bars, status indicators, and summary metrics.*
+
 ### 3. Inspect a Single Profile
 Check an individual learner's progress without requiring a CSV file:
 ```bash
@@ -177,6 +183,21 @@ Starts the HTTP web server and dynamic real-time dashboard. All frontend assets 
 - `--run-ttl duration`: In-memory run retention TTL (default: `30m0s`).
 - `--max-rps float`: Server-level ceiling for requests per second (default: `2.0`).
 - `--max-concurrency int`: Server-level ceiling for fetch workers (default: `4`).
+
+### Organizer Authentication & Access Control
+
+To protect server compute and bandwidth from unauthorized scraping, `badgeboard serve` includes access control:
+
+1. **Local Execution (Open by Default)**:
+   Starting `./bin/badgeboard serve` requires no authentication. Organizers can upload and track rosters directly.
+2. **Custom Access Code**:
+   Launch with `--access-code "<your-secret>"` or set `export BADGEBOARD_ACCESS_CODE="<your-secret>"`. Protected API routes (`POST /api/runs`, `POST /api/runs/{id}/retry`) then require an `Authorization: Bearer <your-secret>` header.
+3. **Hosted Cloud Run Requirement**:
+   In hosted mode (`--hosted`), the server refuses to start without an access code unless `--demo-only` is explicitly supplied.
+4. **Memory-Only In-Browser Token Safety**:
+   When prompted in the web UI modal, the entered code is held in JavaScript memory only (`this.accessCode`). It is never persisted to `localStorage`, `sessionStorage`, or cookies.
+5. **Constant-Time Verification**:
+   The Go server compares tokens via `subtle.ConstantTimeCompare`, preventing timing-attack leaks.
 
 #### `badgeboard run <roster.csv>`
 Executes batch processing on a participant roster.
@@ -320,21 +341,24 @@ The codebase maintains comprehensive automated test coverage across all internal
 | `internal/ratelimit` | 86.4% |
 | `internal/cache` | 80.0% |
 | `internal/ui` | 73.7% |
+| `internal/web` | 60.5% |
 | `internal/model` | 60.7% |
-| `internal/web` | 55.8% |
-| `cmd/badgeboard` | 38.2% |
+| `cmd/badgeboard` | 37.4% |
 
 ### Running Tests
 ```bash
-# Execute unit test suite with race detector
-go test -race -cover ./...
+# Execute unit test suite with coverage
+go test -cover ./...
 
 # Verify timezone invariance (UTC and Asia/Kolkata)
-TZ=UTC go test -race ./...
-TZ=Asia/Kolkata go test -race ./...
+TZ=UTC go test ./...
+TZ=Asia/Kolkata go test ./...
 
 # Run frontend unit tests (DOM and CSV neutralization)
 node --test internal/web/assets/frontend.test.js
+
+# Run automated headless browser overflow checks (320px, 360px, 390px, 768px across 6 states)
+node scripts/check_overflow.js
 
 # Run static analysis
 golangci-lint run ./...
