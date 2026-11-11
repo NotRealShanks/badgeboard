@@ -27,6 +27,7 @@ type Tracker struct {
 	cache   *cache.Cache
 	limiter *ratelimit.Limiter
 	refresh bool
+	noCache bool
 }
 
 // Option configures Tracker behavior.
@@ -56,6 +57,7 @@ func WithRefresh(refresh bool) Option {
 // WithNoCache explicitly disables disk caching (read-nothing and write-nothing mode).
 func WithNoCache() Option {
 	return func(t *Tracker) {
+		t.noCache = true
 		t.cache = nil
 	}
 }
@@ -66,27 +68,28 @@ func New(cfg *config.Config, opts ...Option) (*Tracker, error) {
 		cfg = config.DefaultConfig()
 	}
 
-	lim := ratelimit.New(cfg.RateLimit.RPS, cfg.RateLimit.Concurrency)
-
-	f := fetch.New(
-		fetch.WithLimiter(lim),
-	)
-
-	c, err := cache.New(cfg.Cache.Dir, time.Duration(cfg.Cache.TTLHours)*time.Hour)
-	if err != nil {
-		return nil, fmt.Errorf("initializing cache: %w", err)
-	}
-
 	t := &Tracker{
 		config:  cfg,
-		fetcher: f,
-		cache:   c,
-		limiter: lim,
 		refresh: false,
 	}
 
 	for _, opt := range opts {
 		opt(t)
+	}
+
+	lim := ratelimit.New(cfg.RateLimit.RPS, cfg.RateLimit.Concurrency)
+	t.limiter = lim
+
+	if t.fetcher == nil {
+		t.fetcher = fetch.New(fetch.WithLimiter(lim))
+	}
+
+	if !t.noCache && t.cache == nil {
+		c, err := cache.New(cfg.Cache.Dir, time.Duration(cfg.Cache.TTLHours)*time.Hour)
+		if err != nil {
+			return nil, fmt.Errorf("initializing cache: %w", err)
+		}
+		t.cache = c
 	}
 
 	return t, nil

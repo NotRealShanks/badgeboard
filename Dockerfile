@@ -19,7 +19,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 # Final minimal distroless container
 FROM gcr.io/distroless/static-debian12:nonroot
 
-WORKDIR /
+WORKDIR /tmp
 
 # Copy timezone data, certificates, and compiled binary
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
