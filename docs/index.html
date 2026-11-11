@@ -55,11 +55,11 @@
 
         <!-- Tab 1: CSV Upload -->
         <div id="paneUpload" class="tab-pane active" role="tabpanel" aria-labelledby="tabUpload">
-          <input type="file" id="fileInput" accept=".csv" style="display:none" aria-label="Upload CSV file">
-          <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="Drop CSV file here or click to choose">
-            <div class="dropzone-label">Drop CSV roster file here, or click to browse</div>
+          <input type="file" id="fileInput" accept=".csv" class="sr-only" aria-label="Upload CSV file">
+          <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="Drop CSV roster file here or press Enter to browse">
+            <div class="dropzone-label">Drop CSV roster file here, or click / press Enter to browse</div>
             <div class="dropzone-hint">Requires column "Google Skills Profile URL". Single-column CSVs supported. Max 1 MB.</div>
-            <div id="fileInfo" class="file-chosen-info"></div>
+            <div id="fileInfo" class="file-chosen-info" style="display: none;" aria-live="polite"></div>
           </div>
         </div>
 
@@ -147,10 +147,12 @@
               <option value="date-desc">Recently Active</option>
             </select>
 
-            <button type="button" id="btnExportCSV" class="btn-export">Export CSV</button>
-            <button type="button" id="btnExportJSON" class="btn-export">Export JSON</button>
-            <button type="button" id="btnExportReport" class="btn-export">Report (HTML)</button>
-            <button type="button" id="btnPrint" class="btn-export">Print / PDF</button>
+            <div class="export-btn-group">
+              <button type="button" id="btnExportCSV" class="btn-export">Export CSV</button>
+              <button type="button" id="btnExportJSON" class="btn-export">Export JSON</button>
+              <button type="button" id="btnExportReport" class="btn-export">Report (HTML)</button>
+              <button type="button" id="btnPrint" class="btn-export">Print / PDF</button>
+            </div>
           </div>
         </div>
 
@@ -158,6 +160,23 @@
         <div id="unreachableContainer"></div>
         <div id="reportStripContainer"></div>
       </section>
+
+      <!-- Access Code Modal Dialog (for Hosted Mode) -->
+      <div id="accessCodeModal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="accessCodeTitle">
+        <div class="modal-box">
+          <h3 id="accessCodeTitle" class="modal-title">Access Code Required</h3>
+          <p class="modal-text">This hosted badgeboard server requires an organizer access code to start runs.</p>
+          <div class="modal-field">
+            <label for="accessCodeInput" class="modal-label">Enter Access Code</label>
+            <input type="password" id="accessCodeInput" class="access-code-input" autocomplete="off" placeholder="Access code...">
+            <div id="accessCodeError" class="modal-error" style="display:none"></div>
+          </div>
+          <div class="modal-actions">
+            <button type="button" id="btnSubmitAccessCode" class="btn-primary">Authenticate</button>
+            <button type="button" id="btnCancelAccessCode" class="btn-secondary">Cancel</button>
+          </div>
+        </div>
+      </div>
     </main>
 
     <footer>
@@ -170,3 +189,4 @@
   <script type="module" src="app.js"></script>
 </body>
 </html>
+

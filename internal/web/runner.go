@@ -223,3 +223,4 @@ func (rn *Runner) CheckSingleProfile(ctx context.Context, rawURL string, goal in
 		Badges:        data.Badges,
 	}, nil
 }
+

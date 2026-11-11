@@ -4,15 +4,19 @@
 /**
  * Creates the large Fraunces summary headline.
  */
-export function renderSummarySentence(completeCount, totalCount, goal = 10, comparisonDiff = null) {
+export function renderSummarySentence(completeCount, totalCount, goal = 10, comparisonDiff = null, isBlockedOrAllUnreachable = false) {
   const container = document.createElement('div');
   container.className = 'summary-sentence-box';
 
   const h2 = document.createElement('h2');
   h2.className = 'summary-sentence';
-  h2.textContent = `${completeCount} of ${totalCount} learners have completed all ${goal} badges.`;
+  if (isBlockedOrAllUnreachable) {
+    h2.textContent = 'The server could not reach Google Skills from here.';
+  } else {
+    h2.textContent = `${completeCount} of ${totalCount} learners have completed all ${goal} badges.`;
+  }
 
-  if (comparisonDiff !== null && comparisonDiff !== undefined) {
+  if (!isBlockedOrAllUnreachable && comparisonDiff !== null && comparisonDiff !== undefined) {
     const span = document.createElement('span');
     span.className = 'summary-comparison';
     if (comparisonDiff > 0) {

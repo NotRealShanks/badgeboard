@@ -1,8 +1,11 @@
 name: Deploy GitHub Pages Dashboard
 
-# Trigger on manual trigger, or push to main when docs change.
-# Note: Requires GitHub Pages to be enabled in repository Settings -> Pages -> Source: "GitHub Actions".
 on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'internal/web/assets/**'
+      - 'docs/**'
   workflow_dispatch:
 
 permissions:
@@ -23,6 +26,15 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build Pages from Single Source of Truth
+        run: make pages
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

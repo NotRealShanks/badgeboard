@@ -3,6 +3,7 @@ package web
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -25,6 +26,8 @@ import (
 type ServerConfig struct {
 	Addr           string
 	Hosted         bool
+	DemoOnly       bool
+	AccessCode     string
 	MaxRows        int
 	MaxRuns        int
 	RunTTL         time.Duration
@@ -233,7 +236,39 @@ func (s *Server) checkIPRateLimit(ip string) bool {
 	return false
 }
 
+func (s *Server) checkAccessCode(r *http.Request) bool {
+	if s.cfg.AccessCode == "" {
+		return true
+	}
+
+	authHeader := r.Header.Get("Authorization")
+	token := ""
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		token = strings.TrimPrefix(authHeader, "Bearer ")
+	} else if authHeader != "" {
+		token = authHeader
+	} else if custom := r.Header.Get("X-Access-Code"); custom != "" {
+		token = custom
+	}
+
+	if token == "" {
+		return false
+	}
+
+	return subtle.ConstantTimeCompare([]byte(token), []byte(s.cfg.AccessCode)) == 1
+}
+
 func (s *Server) handleCreateRun(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.DemoOnly {
+		http.Error(w, `{"error":"Server is in demo-only mode. Live runs are disabled."}`, http.StatusForbidden)
+		return
+	}
+
+	if !s.checkAccessCode(r) {
+		http.Error(w, `{"error":"Access code required or invalid"}`, http.StatusUnauthorized)
+		return
+	}
+
 	// Enforce 1 MB request body limit
 	const maxUploadSize = 1024 * 1024
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
@@ -466,6 +501,11 @@ func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCancelRun(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAccessCode(r) {
+		http.Error(w, `{"error":"Access code required or invalid"}`, http.StatusUnauthorized)
+		return
+	}
+
 	runID := r.PathValue("id")
 	run, ok := s.store.Get(runID)
 	if !ok {
@@ -483,6 +523,16 @@ func (s *Server) handleCancelRun(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRetryRun(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.DemoOnly {
+		http.Error(w, `{"error":"Server is in demo-only mode. Live runs are disabled."}`, http.StatusForbidden)
+		return
+	}
+
+	if !s.checkAccessCode(r) {
+		http.Error(w, `{"error":"Access code required or invalid"}`, http.StatusUnauthorized)
+		return
+	}
+
 	runID := r.PathValue("id")
 	run, ok := s.store.Get(runID)
 	if !ok {
@@ -583,7 +633,7 @@ func (s *Server) handleExportReportHTML(w http.ResponseWriter, r *http.Request) 
 		totalStudents = len(run.Results) + len(run.Unreachable)
 	}
 
-	io.WriteString(w, `<!DOCTYPE html>
+	_, _ = io.WriteString(w, `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">

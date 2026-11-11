@@ -413,3 +413,159 @@ func TestServer_Exports(t *testing.T) {
 		t.Errorf("expected unreachable section in HTML report")
 	}
 }
+
+func TestServer_AccessCode(t *testing.T) {
+	appCfg := config.DefaultConfig()
+	trk, _ := tracker.New(appCfg, tracker.WithNoCache())
+	s := NewServer(ServerConfig{
+		Addr:       "127.0.0.1:0",
+		AccessCode: "supersecret123",
+		MaxRows:    50,
+		MaxRuns:    3,
+	}, trk)
+
+	// 1. Missing access code -> 401
+	body := strings.NewReader(`{"urls":["https://www.skills.google/public_profiles/11111111-2222-3333-4444-555555555551"]}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/runs", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized for missing access code, got %d", w.Code)
+	}
+
+	// 2. Wrong access code -> 401
+	body = strings.NewReader(`{"urls":["https://www.skills.google/public_profiles/11111111-2222-3333-4444-555555555551"]}`)
+	req = httptest.NewRequest(http.MethodPost, "/api/runs", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer wrongcode")
+	w = httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized for wrong access code, got %d", w.Code)
+	}
+
+	// 3. Right access code via Authorization: Bearer <code -> 202
+	body = strings.NewReader(`{"urls":["https://www.skills.google/public_profiles/11111111-2222-3333-4444-555555555551"]}`)
+	req = httptest.NewRequest(http.MethodPost, "/api/runs", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer supersecret123")
+	w = httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 Accepted with correct access code, got %d", w.Code)
+	}
+
+	// 4. Right access code via direct header token -> 202
+	body = strings.NewReader(`{"urls":["https://www.skills.google/public_profiles/11111111-2222-3333-4444-555555555551"]}`)
+	req = httptest.NewRequest(http.MethodPost, "/api/runs", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "supersecret123")
+	w = httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 Accepted with direct header token, got %d", w.Code)
+	}
+}
+
+func TestServer_DemoOnly(t *testing.T) {
+	appCfg := config.DefaultConfig()
+	trk, _ := tracker.New(appCfg, tracker.WithNoCache())
+	s := NewServer(ServerConfig{
+		Addr:     "127.0.0.1:0",
+		DemoOnly: true,
+		MaxRows:  50,
+		MaxRuns:  3,
+	}, trk)
+
+	// POST /api/runs -> 403 Forbidden
+	body := strings.NewReader(`{"urls":["https://www.skills.google/public_profiles/11111111-2222-3333-4444-555555555551"]}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/runs", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden in demo-only mode for POST /api/runs, got %d", w.Code)
+	}
+
+	// GET /api/demo -> 200 OK (demo data is still accessible)
+	demoReq := httptest.NewRequest(http.MethodGet, "/api/demo", nil)
+	demoW := httptest.NewRecorder()
+	s.Handler().ServeHTTP(demoW, demoReq)
+	if demoW.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for /api/demo in demo-only mode, got %d", demoW.Code)
+	}
+}
+
+func TestServer_SSE_Resume_LastEventID(t *testing.T) {
+	s := setupTestServer(t, false, 10, 3)
+
+	run, err := s.store.CreateRun(RunSettings{Goal: 10}, 3)
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	// Broadcast 3 events prior to client subscribing
+	run.Broadcast("progress", `{"done":1,"total":3}`)
+	run.Broadcast("progress", `{"done":2,"total":3}`)
+	run.Broadcast("run_complete", `{"status":"complete"}`)
+
+	// Client reconnects with Last-Event-ID = 2, so it should only receive event ID 3
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/runs/%s/events", run.ID), nil)
+	req.Header.Set("Last-Event-ID", "2")
+	w := httptest.NewRecorder()
+
+	s.Handler().ServeHTTP(w, req)
+
+	body := w.Body.String()
+	if strings.Contains(body, "id: 1") {
+		t.Errorf("SSE resume should have skipped event id 1, got:\n%s", body)
+	}
+	if strings.Contains(body, "id: 2") {
+		t.Errorf("SSE resume should have skipped event id 2, got:\n%s", body)
+	}
+	if !strings.Contains(body, "id: 3") || !strings.Contains(body, "event: run_complete") {
+		t.Errorf("SSE resume missing event id 3 (run_complete), got:\n%s", body)
+	}
+}
+
+func TestServer_RetryEndpoint(t *testing.T) {
+	s := setupTestServer(t, false, 10, 3)
+
+	run, err := s.store.CreateRun(RunSettings{Goal: 10}, 2)
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	// Mark run as complete with 1 retryable failure and 1 non-retryable (private) failure
+	run.mu.Lock()
+	run.Status = "complete"
+	run.Unreachable = []model.ProfileResult{
+		{
+			Student: model.Student{ProfileURL: "https://www.skills.google/public_profiles/11111111-2222-3333-4444-555555555551"},
+			Status:  model.StatusPrivateOrNotFound,
+		},
+		{
+			Student: model.Student{ProfileURL: "https://www.skills.google/public_profiles/11111111-2222-3333-4444-555555555552"},
+			Status:  model.StatusNetworkError,
+		},
+	}
+	run.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/runs/%s/retry", run.ID), nil)
+	w := httptest.NewRecorder()
+
+	s.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from retry endpoint, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	var res map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&res); err != nil {
+		t.Fatalf("decoding retry response: %v", err)
+	}
+	if res["status"] != "retrying" {
+		t.Errorf("expected status 'retrying', got %v", res["status"])
+	}
+}

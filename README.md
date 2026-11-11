@@ -169,7 +169,9 @@ https://www.skills.google/public_profiles/22222222-3333-4444-5555-666666666666
 #### `badgeboard serve`
 Starts the HTTP web server and dynamic real-time dashboard. All frontend assets are compiled into the binary via `go:embed`.
 - `--addr string`: Server listening address (default: `127.0.0.1:8080`, honors Cloud Run `$PORT`).
-- `--hosted`: Enable hosted mode (stateless in-memory store, zero disk cache, stricter per-IP limits).
+- `--hosted`: Enable hosted mode (stateless in-memory store, zero disk cache, stricter per-IP limits). In hosted mode, an `--access-code` (or `$BADGEBOARD_ACCESS_CODE`) is required unless `--demo-only` is set.
+- `--access-code string`: Organizer access code required for live evaluation runs (also honors `$BADGEBOARD_ACCESS_CODE`). Verified via constant-time comparison.
+- `--demo-only`: Disables live scraping routes (`/api/runs`) and serves only the interactive demo.
 - `--max-rows int`: Maximum roster rows permitted per run (default: `500`).
 - `--max-runs int`: Maximum concurrent active runs (default: `3`).
 - `--run-ttl duration`: In-memory run retention TTL (default: `30m0s`).
@@ -293,6 +295,12 @@ The web dashboard is designed for static hosting on GitHub Pages:
   default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self';
   ```
 - **Accessibility & Performance**: Passes WCAG 2.1 AA with a 100/100 Lighthouse accessibility score and 0 axe-core automated audit violations.
+
+### GitHub Pages Setup (Single Source of Truth)
+The static dashboard is generated directly from `internal/web/assets` via `make pages`:
+1. In the repository settings, go to **Settings > Pages**.
+2. Under **Build and deployment > Source**, select **GitHub Actions**.
+3. Pushes to `main` modifying `internal/web/assets/**` automatically build and publish the verified demo site using `.github/workflows/deploy-pages.yml`. Manual deployments can also be dispatched under the GitHub Actions tab.
 
 ---
 

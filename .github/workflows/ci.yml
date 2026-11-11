@@ -50,8 +50,16 @@ jobs:
         with:
           node-version: 20
 
+      - name: Verify No Drift (make pages)
+        run: |
+          make pages
+          git diff --exit-code docs/app.js docs/index.html docs/style.css docs/render.js docs/report.js docs/csv.js docs/demo-data.js
+
       - name: Run Frontend Unit Tests
         run: node --test internal/web/assets/frontend.test.js
+
+      - name: Run Headless Overflow and Dev Banner Checks
+        run: node scripts/check_overflow.js
 
       - name: Go Vet
         run: go vet ./...
@@ -70,4 +78,3 @@ jobs:
         uses: actions/checkout@v4
       - name: Build Docker image
         run: docker build -t badgeboard:test .
-

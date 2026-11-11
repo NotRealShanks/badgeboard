@@ -76,3 +76,23 @@ test('computeDistribution: buckets counts accurately', () => {
   assert.equal(dist.sevenToNine, 1);
   assert.equal(dist.ten, 2);
 });
+
+test('devBanner: style rules strictly hide dev banner unless .dev-active', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const css = fs.readFileSync(new URL('./style.css', import.meta.url), 'utf8');
+
+  // Verify .dev-banner is hidden by default
+  assert.match(css, /\.dev-banner\s*\{[^}]*display:\s*none\s*!important/);
+  // Verify .dev-banner.dev-active displays flex
+  assert.match(css, /\.dev-banner\.dev-active\s*\{[^}]*display:\s*flex\s*!important/);
+});
+
+test('dropzone: accessible markup and sr-only file input', async () => {
+  const fs = await import('node:fs');
+  const html = fs.readFileSync(new URL('./index.html', import.meta.url), 'utf8');
+
+  assert.match(html, /id="dropzone"[^>]*role="button"[^>]*tabindex="0"/);
+  assert.match(html, /id="fileInput"[^>]*class="sr-only"/);
+  assert.match(html, /id="accessCodeModal"/);
+});

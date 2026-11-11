@@ -256,3 +256,4 @@ export function computeDistribution(results = [], goal = 10) {
 
   return { zero, oneToThree, fourToSix, sevenToNine, ten };
 }
+

@@ -26,6 +26,8 @@ class BadgeboardApp {
     this.streamingInterval = null;
     this.previousSnapshot = null;
     this.sessionComparisonDiff = null;
+    this.accessCode = null;
+    this.pendingRunAction = null;
 
     this.settings = {
       goal: 10,
@@ -41,11 +43,17 @@ class BadgeboardApp {
 
   async init() {
     this.initTheme();
+
+    // Dev preview switcher is strictly hidden unless ?dev=1 is explicitly passed
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('dev') === '1' && this.elements.devBanner) {
+      this.elements.devBanner.classList.add('dev-active');
+    }
+
     await this.detectMode();
     this.bindEvents();
 
     // Check URL state param for dev/testing
-    const params = new URLSearchParams(window.location.search);
     const devState = params.get('state');
     if (devState) {
       this.setState(devState);
@@ -61,6 +69,7 @@ class BadgeboardApp {
     this.elements = {
       themeBtn: document.getElementById('themeToggleBtn'),
       modeTag: document.getElementById('modeTag'),
+      devBanner: document.querySelector('.dev-banner'),
       inputSection: document.getElementById('inputSection'),
       resultsSection: document.getElementById('resultsSection'),
       progressStripContainer: document.getElementById('progressStripContainer'),
@@ -71,6 +80,13 @@ class BadgeboardApp {
       unreachableContainer: document.getElementById('unreachableContainer'),
       reportStripContainer: document.getElementById('reportStripContainer'),
       stateMessageContainer: document.getElementById('stateMessageContainer'),
+
+      // Access Code Modal (Hosted Hardening)
+      accessCodeModal: document.getElementById('accessCodeModal'),
+      accessCodeInput: document.getElementById('accessCodeInput'),
+      accessCodeError: document.getElementById('accessCodeError'),
+      btnSubmitAccessCode: document.getElementById('btnSubmitAccessCode'),
+      btnCancelAccessCode: document.getElementById('btnCancelAccessCode'),
 
       // Tabs
       tabUpload: document.getElementById('tabUpload'),
@@ -161,6 +177,12 @@ class BadgeboardApp {
 
     // Dropzone
     this.elements.dropzone.addEventListener('click', () => this.elements.fileInput.click());
+    this.elements.dropzone.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        this.elements.fileInput.click();
+      }
+    });
     this.elements.fileInput.addEventListener('change', (e) => this.handleFileSelect(e.target.files[0]));
 
     this.elements.dropzone.addEventListener('dragover', (e) => {
@@ -177,6 +199,28 @@ class BadgeboardApp {
         this.handleFileSelect(e.dataTransfer.files[0]);
       }
     });
+
+    // Access Code Modal Events (Hosted Hardening)
+    if (this.elements.btnSubmitAccessCode) {
+      this.elements.btnSubmitAccessCode.addEventListener('click', () => this.submitAccessCode());
+    }
+    if (this.elements.accessCodeInput) {
+      this.elements.accessCodeInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          this.submitAccessCode();
+        }
+      });
+    }
+    if (this.elements.btnCancelAccessCode) {
+      this.elements.btnCancelAccessCode.addEventListener('click', () => {
+        if (this.elements.accessCodeModal) {
+          this.elements.accessCodeModal.style.display = 'none';
+        }
+        this.pendingRunAction = null;
+        this.setState('empty');
+      });
+    }
 
     // Action buttons
     this.elements.btnDemo.addEventListener('click', () => this.setState('complete'));
@@ -232,7 +276,35 @@ class BadgeboardApp {
   handleFileSelect(file) {
     if (!file) return;
     this.selectedFile = file;
-    this.elements.fileInfo.textContent = `Selected: ${file.name} (${Math.round(file.size / 1024)} KB)`;
+    if (this.elements.fileInfo) {
+      this.elements.fileInfo.style.display = 'inline-block';
+      this.elements.fileInfo.textContent = `Selected: ${file.name} (${Math.round(file.size / 1024)} KB)`;
+    }
+  }
+
+  submitAccessCode() {
+    if (!this.elements.accessCodeInput) return;
+    const code = this.elements.accessCodeInput.value.trim();
+    if (!code) {
+      if (this.elements.accessCodeError) {
+        this.elements.accessCodeError.style.display = 'block';
+        this.elements.accessCodeError.textContent = 'Please enter an access code.';
+      }
+      return;
+    }
+    // Access code is kept in memory only — never stored in localStorage or sessionStorage
+    this.accessCode = code;
+    if (this.elements.accessCodeModal) {
+      this.elements.accessCodeModal.style.display = 'none';
+    }
+    if (this.elements.accessCodeError) {
+      this.elements.accessCodeError.style.display = 'none';
+    }
+    if (this.pendingRunAction) {
+      const action = this.pendingRunAction;
+      this.pendingRunAction = null;
+      action();
+    }
   }
 
   readSettings() {
@@ -308,7 +380,26 @@ class BadgeboardApp {
       }
 
       this.setState('starting');
+      if (this.accessCode) {
+        headers['Authorization'] = `Bearer ${this.accessCode}`;
+      }
       const res = await fetch('/api/runs', { method: 'POST', headers, body });
+      if (res.status === 401) {
+        const errJson = await res.json().catch(() => ({}));
+        this.pendingRunAction = () => this.startLiveRun();
+        if (this.elements.accessCodeModal) {
+          this.elements.accessCodeModal.style.display = 'flex';
+          if (this.elements.accessCodeError) {
+            this.elements.accessCodeError.style.display = 'block';
+            this.elements.accessCodeError.textContent = errJson.error || 'Organizer access code required.';
+          }
+          if (this.elements.accessCodeInput) {
+            this.elements.accessCodeInput.value = '';
+            this.elements.accessCodeInput.focus();
+          }
+        }
+        return;
+      }
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
         throw new Error(errJson.error || `Server responded with ${res.status}`);
@@ -385,7 +476,9 @@ class BadgeboardApp {
 
   cancelCurrentRun() {
     if (this.mode === 'LIVE' && this.currentRunId) {
-      fetch(`/api/runs/${this.currentRunId}/cancel`, { method: 'POST' }).catch(console.error);
+      const headers = {};
+      if (this.accessCode) headers['Authorization'] = `Bearer ${this.accessCode}`;
+      fetch(`/api/runs/${this.currentRunId}/cancel`, { method: 'POST', headers }).catch(console.error);
     }
     if (this.streamingInterval) {
       clearInterval(this.streamingInterval);
@@ -396,8 +489,19 @@ class BadgeboardApp {
 
   retryUnreachable() {
     if (this.mode === 'LIVE' && this.currentRunId) {
-      fetch(`/api/runs/${this.currentRunId}/retry`, { method: 'POST' })
-        .then(() => this.subscribeLiveEvents(this.currentRunId))
+      const headers = {};
+      if (this.accessCode) headers['Authorization'] = `Bearer ${this.accessCode}`;
+      fetch(`/api/runs/${this.currentRunId}/retry`, { method: 'POST', headers })
+        .then((res) => {
+          if (res.status === 401) {
+            this.pendingRunAction = () => this.retryUnreachable();
+            if (this.elements.accessCodeModal) {
+              this.elements.accessCodeModal.style.display = 'flex';
+            }
+            return;
+          }
+          this.subscribeLiveEvents(this.currentRunId);
+        })
         .catch(console.error);
     } else {
       // Demo retry simulation: resolves network/rate-limit profiles into completed rows
@@ -664,10 +768,13 @@ class BadgeboardApp {
     const completeCount = summary.complete_count || snapshot.results.filter(r => r.status === 'complete').length;
     const totalCount = summary.total_students || (snapshot.results.length + (snapshot.unreachable ? snapshot.unreachable.length : 0));
 
+    const unreachableList = snapshot.unreachable || [];
+    const isBlocked = (snapshot.results.length === 0 && unreachableList.length > 0);
+
     // 1. Summary Headline
     this.elements.summaryContainer.textContent = '';
     this.elements.summaryContainer.appendChild(
-      renderSummarySentence(completeCount, totalCount, goal, this.sessionComparisonDiff)
+      renderSummarySentence(completeCount, totalCount, goal, this.sessionComparisonDiff, isBlocked)
     );
 
     // 2. Distribution Bar
@@ -686,7 +793,6 @@ class BadgeboardApp {
     );
 
     // 4. Unreachable Section
-    const unreachableList = snapshot.unreachable || [];
     this.elements.unreachableContainer.textContent = '';
     if (this.activeFilter === 'all' || this.activeFilter === 'unreachable') {
       this.elements.unreachableContainer.appendChild(

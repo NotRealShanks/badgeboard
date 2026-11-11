@@ -149,3 +149,14 @@ This document records the core architectural decisions, design choices, and trad
   `default-src 'self'; font-src 'self' data:; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';`
   eliminating cross-site scripting (XSS) and clickjacking vectors.
 
+---
+
+## 17. Hosted Hardening & Fix Pass Architecture
+- **Horizontal Overflow Eradication**: Fixed horizontal blowout across 320, 360, 390, and 768px viewports by wrapping headers and summary sentences, replacing fixed/overflowing flex rows with CSS grid, and stacking table cells vertically on small viewports.
+- **Dev Banner Isolation**: Dev preview controls are strictly hidden (`display: none !important`) by default and only enabled when `?dev=1` is explicitly present in the query string. Never exposed in production, Pages demo, exports, or screenshots.
+- **Access Code Enforcement**: Constant-time comparison (`subtle.ConstantTimeCompare`) prevents timing attacks. In hosted mode, `--access-code` (or `$BADGEBOARD_ACCESS_CODE`) is mandatory unless `--demo-only` is supplied. The access code is stored in-memory in the JS application instance only (never in `localStorage` or `sessionStorage`).
+- **SSE Heartbeat & Resume**: Server broadcasts `: ping\n\n` every 15s to prevent intermediary timeout terminations. Clients reconnect using `Last-Event-ID` to resume buffered events without duplicates.
+- **Google Cloud Run Egress Defense**: Detects Cloud Run IP blocking/anti-bot challenges from `skills.google`. Surfaces "The server could not reach Google Skills from here" and categorizes profiles as unreachable rather than misleading users with 0 badges.
+- **Single Source of Truth (`internal/web/assets`)**: `make pages` generates `docs/` directly from `internal/web/assets`. CI enforces zero drift.
+
+

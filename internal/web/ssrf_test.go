@@ -123,3 +123,4 @@ func TestSSRF_SafeDialContextBlocksPrivateIP(t *testing.T) {
 		t.Errorf("expected SafeDialContext to block 127.0.0.1:80, but got nil error")
 	}
 }
+

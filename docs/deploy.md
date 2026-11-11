@@ -1,19 +1,33 @@
 # Deployment Guide
 
 `badgeboard` supports two primary deployment topologies:
-1. **Dynamic Web Application on Google Cloud Run** (full live scraping backend with SSE streaming).
+1. **Dynamic Web Application on Google Cloud Run** (full live scraping backend with SSE streaming, access control, and in-memory run tracking).
 2. **Static Interactive Demo on GitHub Pages** (standalone static ledger running in client-side DEMO mode).
 
 ---
 
 ## 1. Google Cloud Run (Live Backend Service)
 
-The service runs as a stateless, non-root distroless container with in-memory run tracking and strict security controls.
+The service runs as a stateless, non-root distroless container with in-memory run tracking, strict security controls, and zero disk writes.
 
-### Quick Deploy (from source)
+### Cloud Run Architecture & Settings
+- **`max-instances=1`**: Ensures in-memory active runs and SSE connection channels remain consolidated on a single instance without requiring distributed synchronization.
+- **`session-affinity`**: Pins organizer client requests to the active container.
+- **`timeout=3600s`**: Accommodates long streaming evaluation sessions with respectful ratelimiting.
+- **`min-instances=0`**: Scales to zero when idle to eliminate hosting costs.
+- **Memory**: 256Mi - 512Mi.
+- **Non-root Distroless Image**: Runs under UID `65532:65532` (`gcr.io/distroless/static-debian12:nonroot`).
+- **No Persistent Volumes**: Strictly in-memory data store with automatic TTL janitor purging.
+
+### Production Deploy Command
+
 ```bash
+# 1. Build and push container to Google Artifact Registry / GCR
+gcloud builds submit --tag gcr.io/$PROJECT_ID/badgeboard:latest
+
+# 2. Deploy to Cloud Run with hardened hosted flags and access code
 gcloud run deploy badgeboard \
-  --source . \
+  --image gcr.io/$PROJECT_ID/badgeboard:latest \
   --region us-central1 \
   --platform managed \
   --allow-unauthenticated \
@@ -21,53 +35,100 @@ gcloud run deploy badgeboard \
   --memory 512Mi \
   --cpu 1 \
   --min-instances 0 \
-  --max-instances 3
+  --max-instances 1 \
+  --timeout 3600 \
+  --session-affinity \
+  --set-env-vars BADGEBOARD_ACCESS_CODE="your-organizer-secret-code"
 ```
 
-### Docker Build & Run (Local Container Testing)
-```bash
-# Build the minimal distroless image
-docker build -t badgeboard:latest .
-
-# Run with port forwarding
-docker run --rm -p 8080:8080 badgeboard:latest
-```
-
-### Environment & Server Flags
-In hosted mode (`--hosted`), the server applies:
-- `$PORT` environment variable binding (required by Cloud Run).
-- Zero disk caching (all student data remains ephemeral in memory only).
-- Stricter per-IP rate limiting on `POST /api/runs` to prevent abuse.
-- In-memory TTL janitor running every 2 minutes (deletes runs older than 30 minutes).
+> **Note on Demo-Only Hosted Mode:**
+> If you wish to host a live container for demonstration without allowing public live scraping or requiring an access code, launch with `--demo-only`:
+> ```bash
+> /badgeboard serve --hosted --demo-only
+> ```
+> In `--demo-only` mode, the server serves the interactive demo and disables all live `/api/runs` scraping endpoints.
 
 ---
 
-## 2. GitHub Pages (Static Interactive Demo)
+## 2. Copy-Pasteable Verification Procedure
 
-The `docs/` directory is structured for zero-configuration GitHub Pages hosting:
+After deploying to Cloud Run, execute this step-by-step verification checklist using `curl`:
 
-1. In GitHub repository settings: **Settings > Pages > Build and deployment**.
-2. Select **Source: Deploy from a branch**.
-3. Select **Branch: `web-app` (or `main`) / folder: `/docs`**.
-4. Save.
+### Step 1: Verify Health Probe
+```bash
+export SERVICE_URL="https://your-service-url.run.app"
+export ACCESS_CODE="your-organizer-secret-code"
 
-### How Standalone Demo Mode Works:
-- On load, the frontend sends a probe to `/healthz`.
-- When deployed on GitHub Pages (static CDN), the request returns 404.
-- The frontend detects static hosting and automatically switches to **DEMO Mode**.
-- An honest **"Demo Data"** badge is displayed in the header.
-- The UI provides interactive simulation of live streaming, progress distribution, filtering, searching, CSV/JSON/HTML exports, and dev state inspection (`?state=...`).
-- Real participant data is never faked or misrepresented.
+curl -s -i "$SERVICE_URL/healthz"
+```
+**Expected Output:**
+`HTTP/2 200 OK`
+```json
+{"status":"ok","time":"..."}
+```
+
+### Step 2: Verify Built-in Demo Endpoint
+```bash
+curl -s -i "$SERVICE_URL/api/demo"
+```
+**Expected Output:**
+`HTTP/2 200 OK`
+Contains synthetic demo snapshot with 11 learners, distribution buckets, and unreachable profiles.
+
+### Step 3: Verify Access Code Protection
+```bash
+# Test unauthorized POST (should fail with 401)
+curl -s -o /dev/null -w "%{http_code}\n" -X POST "$SERVICE_URL/api/runs" -H "Content-Type: application/json" -d '{"urls":[]}'
+# => 401
+```
+
+### Step 4: Run Real Verification using Synthetic Roster
+Upload `testdata/sample_roster.csv` using the access code:
+```bash
+RUN_RES=$(curl -s -X POST \
+  -H "Authorization: Bearer $ACCESS_CODE" \
+  -F "file=@testdata/sample_roster.csv" \
+  -F "goal=10" \
+  "$SERVICE_URL/api/runs")
+
+echo "$RUN_RES"
+# Extract run ID
+RUN_ID=$(echo "$RUN_RES" | grep -o '"run_id":"[^"]*' | cut -d'"' -f4)
+echo "Active Run ID: $RUN_ID"
+```
+
+### Step 5: Stream Live SSE Progress & Egress IP Response
+```bash
+curl -N -H "Last-Event-ID: 0" "$SERVICE_URL/api/runs/$RUN_ID/events"
+```
+
+#### Egress IP Assessment Matrix:
+| Egress Behavior | Upstream HTTP Status | UI & API Headline Result |
+| :--- | :--- | :--- |
+| **Clean Egress** | `200 OK` from `skills.google` | Learner names and badges appear live in roster order with normal distribution. |
+| **Throttled Egress** | `429 Too Many Requests` | Engine pauses automatically, respects `Retry-After`, and resumes. |
+| **Cloud IP Blocked / Anti-Bot** | `403 Forbidden` / Cloudflare Challenge | Profiles are categorized under **"Couldn't be checked"** with status `network_error`. The summary headline explicitly states: <br>**"The server could not reach Google Skills from here."** <br>*Learners are never falsely displayed as having 0 badges.* |
 
 ---
 
-## 3. Local Binary Service
-To run locally without Docker:
-```bash
-# Compile single static binary
-go build -o bin/badgeboard ./cmd/badgeboard
+## 3. GitHub Pages (Static Interactive Demo)
 
-# Start web service
-./bin/badgeboard serve --addr 127.0.0.1:8080
+The published site on GitHub Pages runs as a pure client-side static application from the `docs/` folder, generated deterministically from `internal/web/assets`.
+
+### One-Time Repository Configuration:
+1. Navigate to your GitHub repository: **Settings > Pages**.
+2. Under **Build and deployment > Source**, select **GitHub Actions**.
+3. Pushes to `main` touching `internal/web/assets/**` or `docs/**` will automatically trigger `.github/workflows/deploy-pages.yml`, run `make pages`, and publish the verified demo site.
+
+---
+
+## 4. Local Execution
+
+```bash
+# Build binary
+make build
+
+# Start local server with custom access code
+./bin/badgeboard serve --addr 127.0.0.1:8080 --access-code "mysecret"
 ```
-Open [http://127.0.0.1:8080](http://127.0.0.1:8080) in your browser.
+Visit `http://127.0.0.1:8080` in your web browser.

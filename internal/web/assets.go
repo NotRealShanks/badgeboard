@@ -16,3 +16,4 @@ func Assets() fs.FS {
 	}
 	return sub
 }
+

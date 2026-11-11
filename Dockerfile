@@ -34,3 +34,4 @@ EXPOSE 8080
 ENV PORT=8080
 
 ENTRYPOINT ["/badgeboard", "serve", "--addr", "0.0.0.0:8080", "--hosted"]
+

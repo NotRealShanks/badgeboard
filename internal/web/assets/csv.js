@@ -165,3 +165,4 @@ export function generateCSVExport(records, isAnonymized = false) {
 
   return lines.join('\r\n') + '\r\n';
 }
+

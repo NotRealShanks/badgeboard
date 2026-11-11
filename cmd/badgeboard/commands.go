@@ -724,6 +724,8 @@ func newServeCmd() *cobra.Command {
 	var (
 		addr           string
 		hosted         bool
+		demoOnly       bool
+		accessCode     string
 		maxRows        int
 		maxRuns        int
 		runTTL         time.Duration
@@ -739,9 +741,19 @@ func newServeCmd() *cobra.Command {
 				addr = ":" + os.Getenv("PORT")
 			}
 
+			if accessCode == "" {
+				accessCode = os.Getenv("BADGEBOARD_ACCESS_CODE")
+			}
+
+			if hosted && accessCode == "" && !demoOnly {
+				return errors.New("in --hosted mode, --access-code (or BADGEBOARD_ACCESS_CODE env var) is required unless --demo-only is specified")
+			}
+
 			serverCfg := web.ServerConfig{
 				Addr:           addr,
 				Hosted:         hosted,
+				DemoOnly:       demoOnly,
+				AccessCode:     accessCode,
 				MaxRows:        maxRows,
 				MaxRuns:        maxRuns,
 				RunTTL:         runTTL,
@@ -774,8 +786,8 @@ func newServeCmd() *cobra.Command {
 				_ = httpServer.Shutdown(shutdownCtx)
 			}()
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Badgeboard server listening on http://%s (hosted=%v, max_rows=%d, max_runs=%d)\n",
-				addr, hosted, maxRows, maxRuns)
+			fmt.Fprintf(cmd.OutOrStdout(), "Badgeboard server listening on http://%s (hosted=%v, demo_only=%v, max_rows=%d, max_runs=%d)\n",
+				addr, hosted, demoOnly, maxRows, maxRuns)
 
 			if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				return fmt.Errorf("server error: %w", err)
@@ -786,6 +798,8 @@ func newServeCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&addr, "addr", "127.0.0.1:8080", "Server listening address")
 	cmd.Flags().BoolVar(&hosted, "hosted", false, "Enable hosted mode (in-memory only, no disk cache, stricter per-IP limits)")
+	cmd.Flags().BoolVar(&demoOnly, "demo-only", false, "Disable live runs and serve only demo data (safe for public hosted demos)")
+	cmd.Flags().StringVar(&accessCode, "access-code", "", "Secret access code required for starting runs on this server (or $BADGEBOARD_ACCESS_CODE)")
 	cmd.Flags().IntVar(&maxRows, "max-rows", 500, "Maximum roster rows allowed per run")
 	cmd.Flags().IntVar(&maxRuns, "max-runs", 3, "Maximum concurrent active runs")
 	cmd.Flags().DurationVar(&runTTL, "run-ttl", 30*time.Minute, "In-memory run retention TTL")

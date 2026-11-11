@@ -201,10 +201,6 @@ func (s *Store) purgeExpired() {
 	}
 }
 
-// RLx helper for Read lock
-func (s *Store) mu_RLock() {
-	s.mu.RLock()
-}
 
 // Broadcast sends an SSE event to all active subscribers and appends it to eventLog.
 func (r *Run) Broadcast(event string, data string) {
