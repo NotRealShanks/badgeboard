@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -14,9 +15,41 @@ import (
 	"time"
 
 	"github.com/NotRealShanks/badgeboard/internal/config"
+	"github.com/NotRealShanks/badgeboard/internal/fetch"
 	"github.com/NotRealShanks/badgeboard/internal/model"
 	"github.com/NotRealShanks/badgeboard/internal/tracker"
 )
+
+type mockRoundTripFunc func(req *http.Request) (*http.Response, error)
+
+func (f mockRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func newTestTracker(t *testing.T) *tracker.Tracker {
+	t.Helper()
+	appCfg := config.DefaultConfig()
+	mockClient := &http.Client{
+		Transport: mockRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewBufferString(`<html><body><h1 class="ql-display-1">Test Student</h1><div class="ql-subhead-1">10 Badges</div></body></html>`)),
+				Header:     make(http.Header),
+				Request:    req,
+			}, nil
+		}),
+	}
+	mockFetcher := fetch.New(
+		fetch.WithHTTPClient(mockClient),
+		fetch.WithMaxRetries(0),
+		fetch.WithSleeper(func(_ context.Context, _ time.Duration) error { return nil }),
+	)
+	trk, err := tracker.New(appCfg, tracker.WithNoCache(), tracker.WithFetcher(mockFetcher))
+	if err != nil {
+		t.Fatalf("failed to build test tracker: %v", err)
+	}
+	return trk
+}
 
 func setupTestServer(t *testing.T, hosted bool, maxRows, maxRuns int) *Server {
 	t.Helper()
@@ -30,13 +63,7 @@ func setupTestServer(t *testing.T, hosted bool, maxRows, maxRuns int) *Server {
 		MaxConcurrency: 4,
 	}
 
-	appCfg := config.DefaultConfig()
-	trk, err := tracker.New(appCfg, tracker.WithNoCache())
-	if err != nil {
-		t.Fatalf("failed to build test tracker: %v", err)
-	}
-
-	return NewServer(cfg, trk)
+	return NewServer(cfg, newTestTracker(t))
 }
 
 func TestServer_Healthz(t *testing.T) {
@@ -415,8 +442,7 @@ func TestServer_Exports(t *testing.T) {
 }
 
 func TestServer_AccessCode(t *testing.T) {
-	appCfg := config.DefaultConfig()
-	trk, _ := tracker.New(appCfg, tracker.WithNoCache())
+	trk := newTestTracker(t)
 	s := NewServer(ServerConfig{
 		Addr:       "127.0.0.1:0",
 		AccessCode: "supersecret123",
@@ -469,8 +495,7 @@ func TestServer_AccessCode(t *testing.T) {
 }
 
 func TestServer_DemoOnly(t *testing.T) {
-	appCfg := config.DefaultConfig()
-	trk, _ := tracker.New(appCfg, tracker.WithNoCache())
+	trk := newTestTracker(t)
 	s := NewServer(ServerConfig{
 		Addr:     "127.0.0.1:0",
 		DemoOnly: true,

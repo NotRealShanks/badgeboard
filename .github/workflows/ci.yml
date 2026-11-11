@@ -77,10 +77,10 @@ jobs:
         run: go vet ./...
 
       - name: Run Tests (-race -cover)
-        run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+        run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./... 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Verify Coverage
-        run: go tool cover -func=coverage.txt
+        run: go tool cover -func=coverage.txt 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
 
   docker:
     name: Docker Build

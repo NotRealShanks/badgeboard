@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/NotRealShanks/badgeboard/internal/fetch"
@@ -42,21 +43,27 @@ func (rn *Runner) ExecuteRun(ctx context.Context, run *Run, rst *roster.Roster) 
 	run.SetCancel(cancel)
 	defer cancel()
 
-	var cacheHits int
-	var networkReqs int
-	var retries int
-	var pauseDuration time.Duration
+	var (
+		statsMu     sync.Mutex
+		cacheHits   int
+		networkReqs int
+		retries     int
+		pauseDuration time.Duration
+	)
 
 	// Stream progress and row results using the server's tracker
 	results, err := rn.serverTracker.Track(ctx, rst, func(current, total int, res model.ProfileResult) {
+		statsMu.Lock()
 		if res.FromCache {
 			cacheHits++
 		} else {
 			networkReqs++
 		}
+		hits := cacheHits
+		statsMu.Unlock()
 
 		elapsed := time.Since(startTime)
-		netReqs := current - cacheHits
+		netReqs := current - hits
 		netRate := 0.0
 		if elapsed.Seconds() > 0 && netReqs > 0 {
 			netRate = float64(netReqs) / elapsed.Seconds()
@@ -79,7 +86,7 @@ func (rn *Runner) ExecuteRun(ctx context.Context, run *Run, rst *roster.Roster) 
 			Done:     current,
 			Total:    total,
 			Rate:     netRate,
-			Cached:   cacheHits,
+			Cached:   hits,
 			ETA:      fmt.Sprintf("%ds", int(etaDur.Seconds())),
 			IsPaused: false,
 		}
@@ -130,6 +137,11 @@ func (rn *Runner) ExecuteRun(ctx context.Context, run *Run, rst *roster.Roster) 
 	}
 
 	duration := time.Since(startTime)
+	statsMu.Lock()
+	finalNetworkReqs := networkReqs
+	finalCacheHits := cacheHits
+	statsMu.Unlock()
+
 	run.Summary = RunSummary{
 		Goal:                  run.Settings.Goal,
 		TotalStudents:         len(rst.Students),
@@ -137,8 +149,8 @@ func (rn *Runner) ExecuteRun(ctx context.Context, run *Run, rst *roster.Roster) 
 		InProgressCount:       inProgressCount,
 		NoBadgesCount:         noBadgesCount,
 		UnreachableCount:      unreachableCount,
-		NetworkRequests:       networkReqs,
-		CacheHits:             cacheHits,
+		NetworkRequests:       finalNetworkReqs,
+		CacheHits:             finalCacheHits,
 		Retries:               retries,
 		RateLimitPauseSeconds: pauseDuration.Seconds(),
 		DurationSeconds:       duration.Seconds(),
