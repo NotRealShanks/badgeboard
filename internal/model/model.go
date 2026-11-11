@@ -103,6 +103,7 @@ type ProfileResult struct {
 	Student           Student       `json:"student"`
 	Status            Status        `json:"status"`
 	DisplayName       string        `json:"display_name,omitempty"`
+	Pseudonym         string        `json:"pseudonym,omitempty"`
 	League            string        `json:"league,omitempty"`
 	Points            int           `json:"points,omitempty"`
 	Badges            []BadgeRecord `json:"badges,omitempty"`

@@ -129,3 +129,23 @@ This document records the core architectural decisions, design choices, and trad
   - Single static binary distribution without runtime dependencies (Python, Node, Docker).
   - First-class concurrency (`sync`, channels, worker pools) for high-performance polite scraping.
   - Robust standard library for networking, testing, and HTTP mocking (`httptest`).
+
+---
+
+## 16. Web Application Architecture & Security (`badgeboard serve`)
+- **Single Static Binary with `go:embed`**:
+  All frontend assets (HTML, CSS, ES modules, WOFF2 fonts) are embedded directly into the Go binary at compile time via `internal/web/assets.go` (`//go:embed assets/*`). No external runtime assets or build steps are required.
+- **In-Memory Store & Ephemeral Isolation**:
+  In `serve` mode, participant rosters and scraping runs reside purely in memory in a thread-safe `Store`. Each run receives an unguessable 16-byte random hex ID and an automatic background TTL cleanup janitor (default 30 minutes). When `--hosted` is enabled, on-disk caching is strictly disabled so participant data is never persisted to disk.
+- **Strict SSRF Defenses**:
+  The web server only connects to two upstream sources:
+  1. `skills.google` / `cloudskillsboost.google` for validated profile scraping.
+  2. `docs.google.com` for published Google Sheet CSVs (`/spreadsheets/d/e/.../pub?output=csv`).
+  All other hosts, userinfo credentials (`https://user:pass@host`), non-HTTPS schemes, private/loopback IP addresses (RFC 1918, RFC 3927, RFC 4193, loopback, IPv4-mapped IPv6), and IP literals (decimal, hex, octal) are rejected before and during DNS resolution via custom `net.Dialer` control hooks.
+- **Global Shared Outbound Rate Limiter**:
+  A single shared outbound rate limiter is enforced across all concurrent runs and users on the server, guaranteeing that aggregate traffic to `skills.google` never exceeds the configured `--max-rps` and `--max-concurrency` thresholds.
+- **Strict Content Security Policy & Zero-Dependency Frontend**:
+  The web UI uses pure standard DOM builders (`textContent`, `createElement`) with zero `innerHTML` usage. The server enforces a strict CSP:
+  `default-src 'self'; font-src 'self' data:; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';`
+  eliminating cross-site scripting (XSS) and clickjacking vectors.
+

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -23,6 +24,7 @@ import (
 	"github.com/NotRealShanks/badgeboard/internal/roster"
 	"github.com/NotRealShanks/badgeboard/internal/tracker"
 	"github.com/NotRealShanks/badgeboard/internal/ui"
+	"github.com/NotRealShanks/badgeboard/internal/web"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
@@ -155,6 +157,7 @@ func newRootCmd() *cobra.Command {
 	rootCmd.AddCommand(newDemoCmd())
 	rootCmd.AddCommand(newCacheCmd())
 	rootCmd.AddCommand(newVersionCmd())
+	rootCmd.AddCommand(newServeCmd())
 
 	return rootCmd
 }
@@ -715,4 +718,79 @@ func generateDeterministicDemoData(goal int) []model.ProfileResult {
 	}
 
 	return results
+}
+
+func newServeCmd() *cobra.Command {
+	var (
+		addr           string
+		hosted         bool
+		maxRows        int
+		maxRuns        int
+		runTTL         time.Duration
+		maxRPS         float64
+		maxConcurrency int
+	)
+
+	cmd := &cobra.Command{
+		Use:   "serve",
+		Short: "Start web server and dynamic dashboard",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if hosted && os.Getenv("PORT") != "" {
+				addr = ":" + os.Getenv("PORT")
+			}
+
+			serverCfg := web.ServerConfig{
+				Addr:           addr,
+				Hosted:         hosted,
+				MaxRows:        maxRows,
+				MaxRuns:        maxRuns,
+				RunTTL:         runTTL,
+				MaxRPS:         maxRPS,
+				MaxConcurrency: maxConcurrency,
+			}
+
+			trk, err := web.BuildServerTracker(serverCfg)
+			if err != nil {
+				return fmt.Errorf("initializing server tracker: %w", err)
+			}
+
+			srv := web.NewServer(serverCfg, trk)
+
+			httpServer := &http.Server{
+				Addr:         addr,
+				Handler:      srv.Handler(),
+				ReadTimeout:  30 * time.Second,
+				WriteTimeout: 60 * time.Second,
+				IdleTimeout:  120 * time.Second,
+			}
+
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+
+			go func() {
+				<-ctx.Done()
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_ = httpServer.Shutdown(shutdownCtx)
+			}()
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Badgeboard server listening on http://%s (hosted=%v, max_rows=%d, max_runs=%d)\n",
+				addr, hosted, maxRows, maxRuns)
+
+			if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				return fmt.Errorf("server error: %w", err)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&addr, "addr", "127.0.0.1:8080", "Server listening address")
+	cmd.Flags().BoolVar(&hosted, "hosted", false, "Enable hosted mode (in-memory only, no disk cache, stricter per-IP limits)")
+	cmd.Flags().IntVar(&maxRows, "max-rows", 500, "Maximum roster rows allowed per run")
+	cmd.Flags().IntVar(&maxRuns, "max-runs", 3, "Maximum concurrent active runs")
+	cmd.Flags().DurationVar(&runTTL, "run-ttl", 30*time.Minute, "In-memory run retention TTL")
+	cmd.Flags().Float64Var(&maxRPS, "max-rps", 2.0, "Server-level ceiling for requests per second")
+	cmd.Flags().IntVar(&maxConcurrency, "max-concurrency", 4, "Server-level ceiling for fetch workers")
+
+	return cmd
 }
