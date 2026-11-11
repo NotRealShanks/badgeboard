@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self';">
+  <title>Google Skills Badgeboard — Campaign Progress Ledger</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a href="#mainContent" class="skip-link">Skip to main content</a>
+
+  <div class="app-container">
+    <!-- Dev State Switcher for prototype testing -->
+    <aside class="dev-banner" aria-label="Developer Preview Controls">
+      <span class="dev-label">Dev Preview:</span>
+      <div class="dev-links">
+        <a href="?state=empty" class="dev-btn" data-state="empty">Empty</a>
+        <a href="?state=validating" class="dev-btn" data-state="validating">Validating</a>
+        <a href="?state=starting" class="dev-btn" data-state="starting">Starting</a>
+        <a href="?state=streaming" class="dev-btn" data-state="streaming">Streaming</a>
+        <a href="?state=complete" class="dev-btn" data-state="complete">Complete</a>
+        <a href="?state=partial" class="dev-btn" data-state="partial">Partial / Unreachable</a>
+        <a href="?state=cancelled" class="dev-btn" data-state="cancelled">Cancelled</a>
+        <a href="?state=zero" class="dev-btn" data-state="zero">Zero Badges</a>
+        <a href="?state=huge" class="dev-btn" data-state="huge">Huge Roster (250)</a>
+        <a href="?state=expired" class="dev-btn" data-state="expired">Expired</a>
+        <a href="?state=error" class="dev-btn" data-state="error">Error</a>
+      </div>
+    </aside>
+
+    <header class="app-header">
+      <div class="header-row">
+        <div class="brand">
+          <h1>Google Skills Badgeboard</h1>
+          <div class="subtitle">GDG Learn With Communities • Campaign Progress Ledger</div>
+        </div>
+        <div class="header-controls">
+          <span id="modeTag" class="mode-tag mode-demo">Demo Data</span>
+          <button type="button" id="themeToggleBtn" class="theme-toggle-btn" aria-label="Toggle visual theme">☾ Dark</button>
+        </div>
+      </div>
+    </header>
+
+    <main id="mainContent">
+      <!-- Input Section (Empty / Idle State) -->
+      <section id="inputSection" class="input-section" aria-label="Roster Submission Form">
+        <h2 class="section-title">Evaluate Roster</h2>
+
+        <nav class="tabs-nav" aria-label="Input Method Tabs" role="tablist">
+          <button type="button" id="tabUpload" class="tab-btn active" role="tab" aria-selected="true" aria-controls="paneUpload">Upload CSV</button>
+          <button type="button" id="tabPaste" class="tab-btn" role="tab" aria-selected="false" aria-controls="panePaste">Paste URLs</button>
+          <button type="button" id="tabSheet" class="tab-btn" role="tab" aria-selected="false" aria-controls="paneSheet">Google Sheet Link</button>
+        </nav>
+
+        <!-- Tab 1: CSV Upload -->
+        <div id="paneUpload" class="tab-pane active" role="tabpanel" aria-labelledby="tabUpload">
+          <input type="file" id="fileInput" accept=".csv" style="display:none" aria-label="Upload CSV file">
+          <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="Drop CSV file here or click to choose">
+            <div class="dropzone-label">Drop CSV roster file here, or click to browse</div>
+            <div class="dropzone-hint">Requires column "Google Skills Profile URL". Single-column CSVs supported. Max 1 MB.</div>
+            <div id="fileInfo" class="file-chosen-info"></div>
+          </div>
+        </div>
+
+        <!-- Tab 2: Paste URLs -->
+        <div id="panePaste" class="tab-pane" role="tabpanel" aria-labelledby="tabPaste">
+          <label for="urlsTextarea" style="display:none">Profile URLs</label>
+          <textarea id="urlsTextarea" class="urls-textarea" placeholder="Paste Google Skills public profile URLs here (one per line)...&#10;https://www.skills.google/public_profiles/11111111-2222-3333-4444-555555555555"></textarea>
+        </div>
+
+        <!-- Tab 3: Google Sheet Link -->
+        <div id="paneSheet" class="tab-pane" role="tabpanel" aria-labelledby="tabSheet">
+          <label for="sheetInput" style="display:none">Google Sheet Published CSV URL</label>
+          <input type="url" id="sheetInput" class="sheet-input" placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv">
+          <div class="field-help">In Google Sheets: File → Share → Publish to web → Link → Select Sheet → Choose "Comma-separated values (.csv)" → Publish.</div>
+        </div>
+
+        <!-- Collapsible Run Settings -->
+        <details class="settings-panel">
+          <summary class="settings-toggle">Run Settings &amp; Privacy Options</summary>
+          <div class="settings-grid">
+            <div class="setting-item">
+              <label for="settingGoal">Campaign Goal (Badges)</label>
+              <input type="number" id="settingGoal" value="10" min="1" max="100">
+            </div>
+            <div class="setting-item">
+              <label for="settingRps">Max Requests / Sec</label>
+              <input type="number" id="settingRps" value="1.0" min="0.1" max="5.0" step="0.5">
+            </div>
+            <div class="setting-item">
+              <label for="settingConcurrency">Worker Concurrency</label>
+              <input type="number" id="settingConcurrency" value="2" min="1" max="8">
+            </div>
+            <div class="setting-item checkbox-item">
+              <input type="checkbox" id="settingAnonymize">
+              <label for="settingAnonymize">Hide names (Pseudonymize)</label>
+            </div>
+            <div class="setting-item checkbox-item">
+              <input type="checkbox" id="settingIncludeBadges" checked>
+              <label for="settingIncludeBadges">Include badge details</label>
+            </div>
+            <div class="setting-item checkbox-item">
+              <input type="checkbox" id="settingBypassCache">
+              <label for="settingBypassCache">Bypass disk cache</label>
+            </div>
+          </div>
+        </details>
+
+        <!-- Actions -->
+        <div class="action-row">
+          <button type="button" id="btnStart" class="btn-primary">Start Progress Check</button>
+          <button type="button" id="btnDemo" class="btn-secondary">Try the Demo</button>
+        </div>
+      </section>
+
+      <!-- Live Progress Strip (during streaming) -->
+      <section id="progressStripContainer" aria-live="polite"></section>
+
+      <!-- State message container (empty/error/expired/zero) -->
+      <section id="stateMessageContainer" aria-live="assertive"></section>
+
+      <!-- Results View -->
+      <section id="resultsSection" style="display:none">
+        <div id="summaryContainer" aria-live="polite"></div>
+        <div id="distContainer"></div>
+
+        <!-- Toolbar: Filters, Search, Sort, Exports -->
+        <div id="toolbarSection" class="toolbar-section">
+          <div class="filter-pills" role="radiogroup" aria-label="Status filter">
+            <button type="button" class="pill-btn active" data-filter="all" role="radio" aria-checked="true">All</button>
+            <button type="button" class="pill-btn" data-filter="complete" role="radio" aria-checked="false">Complete</button>
+            <button type="button" class="pill-btn" data-filter="in_progress" role="radio" aria-checked="false">In progress</button>
+            <button type="button" class="pill-btn" data-filter="no_badges" role="radio" aria-checked="false">No badges</button>
+            <button type="button" class="pill-btn" data-filter="unreachable" role="radio" aria-checked="false">Couldn't be checked</button>
+          </div>
+
+          <div class="toolbar-controls">
+            <label for="searchInput" style="display:none">Search</label>
+            <input type="text" id="searchInput" class="search-input" placeholder="Search name, URL, UUID..." aria-label="Search participants">
+
+            <label for="sortSelect" style="display:none">Sort by</label>
+            <select id="sortSelect" class="sort-select" aria-label="Sort participants">
+              <option value="progress-desc">Progress (High to Low)</option>
+              <option value="progress-asc">Progress (Low to High)</option>
+              <option value="name-asc">Name (A–Z)</option>
+              <option value="date-desc">Recently Active</option>
+            </select>
+
+            <button type="button" id="btnExportCSV" class="btn-export">Export CSV</button>
+            <button type="button" id="btnExportJSON" class="btn-export">Export JSON</button>
+            <button type="button" id="btnExportReport" class="btn-export">Report (HTML)</button>
+            <button type="button" id="btnPrint" class="btn-export">Print / PDF</button>
+          </div>
+        </div>
+
+        <div id="tableContainer"></div>
+        <div id="unreachableContainer"></div>
+        <div id="reportStripContainer"></div>
+      </section>
+    </main>
+
+    <footer>
+      <p class="counting-footnote">
+        How counting works: Any verified Google Skills badge counts towards campaign progress. The campaign completion goal is 10 badges. Private profiles or network errors are marked as unread and are never counted as zero.
+      </p>
+    </footer>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

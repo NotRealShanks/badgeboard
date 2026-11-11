@@ -37,6 +37,8 @@ scratch/
 !docs/data/
 !docs/data/results.json
 !docs/data/*.json
+!internal/web/assets/**
+!internal/web/**
 
 # Local configs
 *.local.toml
