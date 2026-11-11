@@ -58,6 +58,11 @@ jobs:
       - name: Run Frontend Unit Tests
         run: node --test internal/web/assets/frontend.test.js
 
+      - name: Set up Chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
       - name: Run Headless Overflow and Dev Banner Checks
         run: node scripts/check_overflow.js
 

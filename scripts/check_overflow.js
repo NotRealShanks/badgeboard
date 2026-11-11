@@ -21,6 +21,15 @@ function findChromePath() {
   if (process.env.CHROME_PATH && fs.existsSync(process.env.CHROME_PATH)) {
     return process.env.CHROME_PATH;
   }
+  try {
+    const { execSync } = require('node:child_process');
+    const which = execSync('which google-chrome || which google-chrome-stable || which chromium || which chromium-browser', {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore']
+    }).trim();
+    if (which && fs.existsSync(which)) return which;
+  } catch {}
+
   const candidates = [
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
@@ -29,6 +38,7 @@ function findChromePath() {
     '/usr/bin/google-chrome-stable',
     '/usr/bin/chromium',
     '/usr/bin/chromium-browser',
+    '/snap/bin/chromium',
   ];
   for (const c of candidates) {
     if (fs.existsSync(c)) return c;
@@ -76,6 +86,8 @@ async function runChecks() {
     '--headless=new',
     `--remote-debugging-port=${DEBUG_PORT}`,
     '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
     '--disable-gpu',
     '--hide-scrollbars',
     'about:blank',
