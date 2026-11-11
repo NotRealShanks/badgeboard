@@ -65,9 +65,16 @@ flowchart TD
 
 ## Key Capabilities
 
+- **Dual Dashboard Views**:
+  - **🏆 BADGE ARENA**: A gamified, esports-inspired community leaderboard featuring a Champions Podium (Top 3 medals), Achievement Tiers (*Champion*, *Elite*, *Challenger*, *Explorer*, *Rookie*), Milestone Distance indicators, and Rank Movement trends (`↑ +2`, `↓ -1`).
+  - **📋 Editorial Ledger**: A high-density audit ledger with Fraunces typography, 5-bucket distribution breakdown (`0`, `1–3`, `4–6`, `7–9`, `10`), live search, filtering, and collapsible badge inspection drawers.
 - **Polite and Adaptive Scraping**: Token-bucket rate limiting (1.0 request/sec default) across 2 concurrent workers, full jitter exponential backoff on transient failures, HTTP 429 / 503 handling, and strict adherence to upstream `Retry-After` headers triggering an immediate global cool-down across all workers.
 - **Resilient HTML Parser**: Parses Google Skills public profile HTML without relying on fragile third-party browser automation frameworks. Enforces a 2 MB response body cap, follows HTTP 302 redirects to identify private accounts, and handles all DOM variations (complete, in-progress, zero badges, private, legacy layout).
 - **Partitioned Disk Caching**: On-disk persistent cache indexed by SHA-256 profile hash. Employs status-based TTL expiration: 6 hours for successful (`200 OK`) profiles, 15 minutes for `PrivateOrNotFound` profiles, and 0 seconds (never cached) for transient network or rate-limiting errors. Supports offline evaluation against cached profile data.
+- **Live Progress & Refreshing**:
+  - **Refresh All**: One-click re-evaluation across all roster candidates with live cache bypass.
+  - **Freshness Timestamps**: Live badges indicating data freshness (`Checked at 11:30 PM`) vs stale/cached results.
+  - **Roster Switching**: Instant "← Evaluate Roster" navigation to switch between cohort analysis and new CSV rosters.
 - **Two Data Privacy Tiers**:
   - **Public Anonymized Tier (`--anonymize`)**: Employs keyed HMAC-SHA256 (`Learner-XXXX`) derived from an out-of-band secret salt. Completely redacts badge titles, individual completion dates, leagues, points, URLs, UUIDs, and full-precision timestamps to eliminate quasi-identifier linkage.
   - **Detailed Anonymized Tier (`--anonymize --include-badges`)**: Retains badge catalog titles and date-only timestamps for detailed drill-down views while stripping all upstream URLs and user identifiers.
@@ -135,7 +142,32 @@ badgeboard run students.csv --anonymize --format json --out docs/data/results.js
 
 ---
 
-## CSV Format Specifications
+## Evaluator Guide: Testing with Discord Challenge CSV
+
+Evaluators testing the GDG challenge can verify the submission in two ways:
+
+### Option A: Instant Live Web Dashboard (Zero Setup)
+1. Open the deployed website: **[https://notrealshanks.github.io/badgeboard/](https://notrealshanks.github.io/badgeboard/)**
+2. Click **"Try the Demo"** to explore the complete synthetic evaluation dataset with both **BADGE ARENA** (gamified podium, achievement tiers, milestones) and **Editorial Ledger** views.
+3. Switch views, search learners, toggle privacy/anonymization, export CSV/JSON, or inspect individual badge details with zero authentication required.
+
+### Option B: Live Evaluation of Discord CSV via CLI
+To test live profile scraping against the Discord challenge CSV without rate-limiting blocks or server dependency:
+```bash
+# 1. Clone repository
+git clone https://github.com/NotRealShanks/badgeboard.git
+cd badgeboard
+
+# 2. Build or run directly with Go
+go run ./cmd/badgeboard run discord_roster.csv --goal 10
+
+# 3. (Optional) Run with interactive local web server
+go run ./cmd/badgeboard serve
+# Open http://127.0.0.1:8080 and drop discord_roster.csv
+```
+*Note: The CLI tracker automatically handles rate limiting (1.0 rps token bucket), exponential jitter backoff, and 429 cool-downs to prevent IP blocks from Google Skills.*
+
+---
 
 The primary evaluation format is a single-column CSV containing public profile links:
 
