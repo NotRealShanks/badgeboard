@@ -4,13 +4,33 @@
 /**
  * Creates the large Fraunces summary headline.
  */
-export function renderSummarySentence(completeCount, totalCount, goal = 10) {
+export function renderSummarySentence(completeCount, totalCount, goal = 10, comparisonDiff = null) {
   const container = document.createElement('div');
   container.className = 'summary-sentence-box';
 
   const h2 = document.createElement('h2');
   h2.className = 'summary-sentence';
   h2.textContent = `${completeCount} of ${totalCount} learners have completed all ${goal} badges.`;
+
+  if (comparisonDiff !== null && comparisonDiff !== undefined) {
+    const span = document.createElement('span');
+    span.className = 'summary-comparison';
+    if (comparisonDiff > 0) {
+      span.textContent = ` (+${comparisonDiff} completed since last run)`;
+      span.style.color = 'var(--accent)';
+      span.style.fontSize = '0.65em';
+      span.style.display = 'inline-block';
+      span.style.marginLeft = '8px';
+      h2.appendChild(span);
+    } else if (comparisonDiff === 0) {
+      span.textContent = ` (no change since last run)`;
+      span.style.color = 'var(--ink-secondary)';
+      span.style.fontSize = '0.65em';
+      span.style.display = 'inline-block';
+      span.style.marginLeft = '8px';
+      h2.appendChild(span);
+    }
+  }
 
   container.appendChild(h2);
   return container;

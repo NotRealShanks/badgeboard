@@ -24,6 +24,8 @@ class BadgeboardApp {
     this.sortBy = 'progress-desc';
     this.activeTab = 'upload';
     this.streamingInterval = null;
+    this.previousSnapshot = null;
+    this.sessionComparisonDiff = null;
 
     this.settings = {
       goal: 10,
@@ -260,6 +262,15 @@ class BadgeboardApp {
       let body;
       const headers = {};
 
+      const settingsPayload = {
+        goal: this.settings.goal,
+        rps: this.settings.rps,
+        concurrency: this.settings.concurrency,
+        anonymize: this.settings.anonymize,
+        include_badges: this.settings.includeBadges,
+        bypass_cache: this.settings.bypassCache
+      };
+
       if (this.activeTab === 'upload') {
         if (!this.selectedFile) {
           alert('Please select a roster CSV file first.');
@@ -284,7 +295,7 @@ class BadgeboardApp {
           return;
         }
         headers['Content-Type'] = 'application/json';
-        body = JSON.stringify({ urls, ...this.settings });
+        body = JSON.stringify({ urls, ...settingsPayload });
       } else if (this.activeTab === 'sheet') {
         const sheetUrl = this.elements.sheetInput.value.trim();
         if (!sheetUrl) {
@@ -293,7 +304,7 @@ class BadgeboardApp {
           return;
         }
         headers['Content-Type'] = 'application/json';
-        body = JSON.stringify({ sheet_url: sheetUrl, ...this.settings });
+        body = JSON.stringify({ sheet_url: sheetUrl, ...settingsPayload });
       }
 
       this.setState('starting');
@@ -314,6 +325,9 @@ class BadgeboardApp {
 
   subscribeLiveEvents(runId) {
     this.setState('streaming');
+    if (this.eventSource) {
+      this.eventSource.close();
+    }
     this.eventSource = new EventSource(`/api/runs/${runId}/events`);
 
     this.liveResults = [];
@@ -326,7 +340,7 @@ class BadgeboardApp {
 
     this.eventSource.addEventListener('row_result', (e) => {
       const row = JSON.parse(e.data);
-      if (row.status === 'private_or_not_found' || row.status === 'network_error' || row.status === 'rate_limited') {
+      if (row.status === 'private_or_not_found' || row.status === 'network_error' || row.status === 'rate_limited' || row.status === 'parse_error') {
         this.liveUnreachable.push(row);
       } else {
         this.liveResults.push(row);
@@ -346,6 +360,14 @@ class BadgeboardApp {
     this.eventSource.addEventListener('run_complete', (e) => {
       this.eventSource.close();
       const snapshot = JSON.parse(e.data);
+      if (this.previousSnapshot) {
+        const prevComplete = this.previousSnapshot.summary?.complete_count || 0;
+        const currComplete = snapshot.summary?.complete_count || 0;
+        this.sessionComparisonDiff = currComplete - prevComplete;
+      } else {
+        this.sessionComparisonDiff = null;
+      }
+      this.previousSnapshot = JSON.parse(JSON.stringify(snapshot));
       this.currentSnapshot = snapshot;
       this.setState('complete');
     });
@@ -525,6 +547,14 @@ class BadgeboardApp {
       if (currentIndex >= allItems.length) {
         clearInterval(this.streamingInterval);
         this.streamingInterval = null;
+        if (this.previousSnapshot) {
+          const prevComplete = this.previousSnapshot.summary?.complete_count || 0;
+          const currComplete = this.currentSnapshot.summary?.complete_count || 0;
+          this.sessionComparisonDiff = currComplete - prevComplete;
+        } else {
+          this.sessionComparisonDiff = null;
+        }
+        this.previousSnapshot = JSON.parse(JSON.stringify(this.currentSnapshot));
         this.setState('complete');
         return;
       }
@@ -636,7 +666,9 @@ class BadgeboardApp {
 
     // 1. Summary Headline
     this.elements.summaryContainer.textContent = '';
-    this.elements.summaryContainer.appendChild(renderSummarySentence(completeCount, totalCount, goal));
+    this.elements.summaryContainer.appendChild(
+      renderSummarySentence(completeCount, totalCount, goal, this.sessionComparisonDiff)
+    );
 
     // 2. Distribution Bar
     const dist = computeDistribution(snapshot.results, goal);

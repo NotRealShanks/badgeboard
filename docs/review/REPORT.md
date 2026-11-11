@@ -66,3 +66,24 @@ All captured states contain strictly fictional synthetic demo data:
 - `w1_partial_mobile360_light.png` / `w1_partial_mobile360_dark.png`
 - `w1_error_desktop_light.png` / `w1_error_desktop_dark.png`
 - `w1_error_mobile360_light.png` / `w1_error_mobile360_dark.png`
+
+---
+
+## 6. Live API Wiring & Streaming Verification (Phase W3)
+The frontend application was wired directly to the live backend server:
+- **Server Health Detection**: On startup, `detectMode()` probes `GET /healthz`. In the live Go server environment, it detects HTTP 200 and sets status tag to `Live Backend`.
+- **Input Methods**:
+  - `Upload CSV`: Dispatches multipart/form-data to `POST /api/runs`.
+  - `Paste URLs`: Formats JSON payload `{ urls, ...settings }` with snake_case parameter serialization.
+  - `Google Sheet link`: Formats JSON payload `{ sheet_url, ...settings }`.
+- **Live EventSource Streaming**:
+  - Subscribes to `/api/runs/{id}/events` via Server-Sent Events (SSE).
+  - Listens to `progress`, `row_result`, `run_complete`, `run_cancelled`, and `error` events.
+  - Dynamically updates the 10-segment progress bar, distribution breakdown, and roster rows as results stream in.
+- **Run Controls**:
+  - `Cancel`: Dispatches `POST /api/runs/{id}/cancel` to immediately halt the runner and broadcast cancellation.
+  - `Retry unreachable`: Dispatches `POST /api/runs/{id}/retry` to re-fetch only transient network/rate-limited errors without re-scraping private or completed profiles.
+- **Session Comparison (Stretch Feature)**:
+  - Preserves prior run snapshot in the browser session.
+  - Upon run completion, calculates differential `(+N completed since last run)` or `(no change since last run)` and renders it alongside the Fraunces summary headline.
+
