@@ -496,3 +496,260 @@ export function renderStateMessage(title, text, isError = false) {
 
   return box;
 }
+
+/**
+ * Achievement Tiers for BADGE ARENA.
+ */
+export function getTier(count) {
+  if (count >= 10) return { name: 'Champion', icon: '🏆', cls: 'tier-champion' };
+  if (count >= 8)  return { name: 'Elite', icon: '⚡', cls: 'tier-elite' };
+  if (count >= 5)  return { name: 'Challenger', icon: '🔥', cls: 'tier-challenger' };
+  if (count >= 3)  return { name: 'Explorer', icon: '🧭', cls: 'tier-explorer' };
+  if (count >= 1)  return { name: 'Rookie', icon: '🌱', cls: 'tier-rookie' };
+  return { name: 'Not Started', icon: '⏸', cls: 'tier-not-started' };
+}
+
+/**
+ * Calculates next milestone distance.
+ */
+export function getNextMilestone(count) {
+  if (count >= 10) return 'Champion 10/10 Reached!';
+  if (count >= 8)  return `${10 - count} to Champion`;
+  if (count >= 5)  return `${8 - count} to Elite`;
+  if (count >= 3)  return `${5 - count} to Challenger`;
+  if (count >= 1)  return `${3 - count} to Explorer`;
+  return '1 to Rookie';
+}
+
+/**
+ * Pure DOM builder for BADGE ARENA gamified view.
+ */
+export function renderArenaView(results, options = {}) {
+  const container = document.createElement('div');
+  container.className = 'arena-container';
+
+  const goal = options.goal || 10;
+  const anonymize = options.anonymize || false;
+  const prevRankMap = options.prevRankMap || {};
+
+  // Sort candidates by badges desc, then name asc
+  const valid = results.filter(r => r.Status !== 'unreachable' && r.Status !== 'private_or_not_found');
+  const sorted = [...valid].sort((a, b) => {
+    const diff = (b.CountedBadges || 0) - (a.CountedBadges || 0);
+    if (diff !== 0) return diff;
+    return (a.DisplayName || '').localeCompare(b.DisplayName || '');
+  });
+
+  // Assign standard competition ranks (1, 1, 3 for ties)
+  let currentRank = 1;
+  const ranked = sorted.map((item, idx) => {
+    if (idx > 0 && (item.CountedBadges || 0) < (sorted[idx - 1].CountedBadges || 0)) {
+      currentRank = idx + 1;
+    }
+    const prev = prevRankMap[item.Student?.UUID || item.Student?.ProfileURL];
+    let movement = '=';
+    let moveClass = 'move-neutral';
+    if (prev !== undefined && prev !== null) {
+      if (prev > currentRank) {
+        movement = `↑ +${prev - currentRank}`;
+        moveClass = 'move-up';
+      } else if (prev < currentRank) {
+        movement = `↓ -${currentRank - prev}`;
+        moveClass = 'move-down';
+      }
+    }
+    return { ...item, rank: currentRank, movement, moveClass };
+  });
+
+  // 1. Campaign Overview Stats Cards
+  const champions = ranked.filter(r => (r.CountedBadges || 0) >= goal).length;
+  const totalBadges = ranked.reduce((acc, r) => acc + (r.CountedBadges || 0), 0);
+  const completionRate = ranked.length > 0 ? Math.round((champions / ranked.length) * 100) : 0;
+
+  const statsRow = document.createElement('div');
+  statsRow.className = 'arena-stats-grid';
+
+  const cards = [
+    { label: 'Active Learners', val: String(ranked.length), sub: 'Total In Roster', cls: 'stat-total' },
+    { label: 'Champions (10/10)', val: String(champions), sub: `${completionRate}% Goal Met`, cls: 'stat-champions' },
+    { label: 'Badges Earned', val: String(totalBadges), sub: `Avg ${(ranked.length ? (totalBadges / ranked.length).toFixed(1) : 0)} / learner`, cls: 'stat-badges' },
+    { label: 'Arena Leader', val: ranked.length > 0 ? (anonymize ? (ranked[0].Pseudonym || 'Learner-1') : ranked[0].DisplayName) : '—', sub: ranked.length > 0 ? `${ranked[0].CountedBadges || 0} Badges` : 'Awaiting Data', cls: 'stat-leader' }
+  ];
+
+  for (const c of cards) {
+    const cardEl = document.createElement('div');
+    cardEl.className = `arena-stat-card ${c.cls}`;
+    const l = document.createElement('div');
+    l.className = 'arena-stat-label';
+    l.textContent = c.label;
+    const v = document.createElement('div');
+    v.className = 'arena-stat-val';
+    v.textContent = c.val;
+    const s = document.createElement('div');
+    s.className = 'arena-stat-sub';
+    s.textContent = c.sub;
+    cardEl.appendChild(l);
+    cardEl.appendChild(v);
+    cardEl.appendChild(s);
+    statsRow.appendChild(cardEl);
+  }
+  container.appendChild(statsRow);
+
+  // 2. Champions Celebration Banner (if champions exist)
+  if (champions > 0) {
+    const banner = document.createElement('div');
+    banner.className = 'arena-celebration-banner';
+    const bTitle = document.createElement('div');
+    bTitle.className = 'celebration-title';
+    bTitle.textContent = `🎉 HALL OF CHAMPIONS: ${champions} LEARNER${champions > 1 ? 'S' : ''} REACHED THE 10/10 GOAL! 🎉`;
+    banner.appendChild(bTitle);
+    container.appendChild(banner);
+  }
+
+  // 3. Champions Podium (Top 3)
+  if (ranked.length > 0) {
+    const podiumBox = document.createElement('div');
+    podiumBox.className = 'arena-podium-section';
+    const pTitle = document.createElement('h3');
+    pTitle.className = 'arena-section-title';
+    pTitle.textContent = 'CHAMPIONS PODIUM';
+    podiumBox.appendChild(pTitle);
+
+    const podium = document.createElement('div');
+    podium.className = 'arena-podium';
+
+    // Podium spots: 2nd (Silver, left), 1st (Gold, center), 3rd (Bronze, right)
+    const spots = [];
+    if (ranked.length > 1) spots.push({ item: ranked[1], place: '2nd', badgeCls: 'podium-silver', icon: '🥈', rankNum: '#2' });
+    spots.push({ item: ranked[0], place: '1st', badgeCls: 'podium-gold', icon: '🏆', rankNum: '#1' });
+    if (ranked.length > 2) spots.push({ item: ranked[2], place: '3rd', badgeCls: 'podium-bronze', icon: '🥉', rankNum: '#3' });
+
+    for (const spot of spots) {
+      const stand = document.createElement('div');
+      stand.className = `podium-stand ${spot.badgeCls}`;
+
+      const medal = document.createElement('div');
+      medal.className = 'podium-icon';
+      medal.textContent = spot.icon;
+
+      const placeLabel = document.createElement('div');
+      placeLabel.className = 'podium-place';
+      placeLabel.textContent = spot.rankNum;
+
+      const name = document.createElement('div');
+      name.className = 'podium-name';
+      const displayName = anonymize ? (spot.item.Pseudonym || spot.item.DisplayName) : spot.item.DisplayName;
+      name.textContent = displayName;
+
+      const badgeCount = document.createElement('div');
+      badgeCount.className = 'podium-badges';
+      badgeCount.textContent = `${spot.item.CountedBadges || 0} / 10 Badges`;
+
+      const tier = getTier(spot.item.CountedBadges || 0);
+      const tierBadge = document.createElement('span');
+      tierBadge.className = `tier-pill ${tier.cls}`;
+      tierBadge.textContent = `${tier.icon} ${tier.name}`;
+
+      stand.appendChild(medal);
+      stand.appendChild(placeLabel);
+      stand.appendChild(name);
+      stand.appendChild(badgeCount);
+      stand.appendChild(tierBadge);
+      podium.appendChild(stand);
+    }
+
+    podiumBox.appendChild(podium);
+    container.appendChild(podiumBox);
+  }
+
+  // 4. Competitive Leaderboard Table
+  const boardSection = document.createElement('div');
+  boardSection.className = 'arena-leaderboard-section';
+
+  const boardTitle = document.createElement('h3');
+  boardTitle.className = 'arena-section-title';
+  boardTitle.textContent = 'COMPETITIVE STANDINGS';
+  boardSection.appendChild(boardTitle);
+
+  const table = document.createElement('div');
+  table.className = 'arena-table';
+
+  // Header Row
+  const header = document.createElement('div');
+  header.className = 'arena-header-row';
+  const cols = ['Rank', 'Learner', 'Achievement Tier', 'Progress (10 Badges)', 'Next Milestone', 'Trend'];
+  for (const c of cols) {
+    const th = document.createElement('div');
+    th.className = 'arena-th';
+    th.textContent = c;
+    header.appendChild(th);
+  }
+  table.appendChild(header);
+
+  // Rows
+  for (const item of ranked) {
+    const row = document.createElement('div');
+    row.className = `arena-row rank-${item.rank <= 3 ? item.rank : 'standard'}`;
+
+    // 1. Rank Col
+    const colRank = document.createElement('div');
+    colRank.className = 'arena-cell cell-rank';
+    const rankBadge = document.createElement('span');
+    rankBadge.className = `arena-rank-badge rank-${item.rank <= 3 ? item.rank : 'default'}`;
+    rankBadge.textContent = `#${item.rank}`;
+    colRank.appendChild(rankBadge);
+
+    // 2. Learner Col
+    const colName = document.createElement('div');
+    colName.className = 'arena-cell cell-name';
+    const nameEl = document.createElement('span');
+    nameEl.className = 'arena-learner-name';
+    nameEl.textContent = anonymize ? (item.Pseudonym || item.DisplayName) : item.DisplayName;
+    colName.appendChild(nameEl);
+
+    // 3. Tier Col
+    const colTier = document.createElement('div');
+    colTier.className = 'arena-cell cell-tier';
+    const tier = getTier(item.CountedBadges || 0);
+    const tierPill = document.createElement('span');
+    tierPill.className = `tier-pill ${tier.cls}`;
+    tierPill.textContent = `${tier.icon} ${tier.name}`;
+    colTier.appendChild(tierPill);
+
+    // 4. Progress Col
+    const colProg = document.createElement('div');
+    colProg.className = 'arena-cell cell-prog';
+    const segBar = render10SegmentBar(item.CountedBadges || 0, goal, (item.CountedBadges || 0) >= goal);
+    const countLabel = document.createElement('span');
+    countLabel.className = 'arena-count-label';
+    countLabel.textContent = `${item.CountedBadges || 0}/${goal}`;
+    colProg.appendChild(segBar);
+    colProg.appendChild(countLabel);
+
+    // 5. Next Milestone
+    const colMilestone = document.createElement('div');
+    colMilestone.className = 'arena-cell cell-milestone';
+    const milestoneSpan = document.createElement('span');
+    milestoneSpan.className = 'arena-milestone-tag';
+    milestoneSpan.textContent = getNextMilestone(item.CountedBadges || 0);
+    colMilestone.appendChild(milestoneSpan);
+
+    // 6. Trend / Movement
+    const colMove = document.createElement('div');
+    colMove.className = `arena-cell cell-trend ${item.moveClass}`;
+    colMove.textContent = item.movement;
+
+    row.appendChild(colRank);
+    row.appendChild(colName);
+    row.appendChild(colTier);
+    row.appendChild(colProg);
+    row.appendChild(colMilestone);
+    row.appendChild(colMove);
+    table.appendChild(row);
+  }
+
+  boardSection.appendChild(table);
+  container.appendChild(boardSection);
+
+  return container;
+}

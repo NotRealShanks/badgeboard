@@ -59,19 +59,19 @@
           <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="Drop CSV roster file here or press Enter to browse">
             <div class="dropzone-label">Drop CSV roster file here, or click / press Enter to browse</div>
             <div class="dropzone-hint">Requires column "Google Skills Profile URL". Single-column CSVs supported. Max 1 MB.</div>
-            <div id="fileInfo" class="file-chosen-info" style="display: none;" aria-live="polite"></div>
+            <div id="fileInfo" class="file-chosen-info hidden" aria-live="polite"></div>
           </div>
         </div>
 
         <!-- Tab 2: Paste URLs -->
         <div id="panePaste" class="tab-pane" role="tabpanel" aria-labelledby="tabPaste">
-          <label for="urlsTextarea" style="display:none">Profile URLs</label>
+          <label for="urlsTextarea" class="sr-only">Profile URLs</label>
           <textarea id="urlsTextarea" class="urls-textarea" placeholder="Paste Google Skills public profile URLs here (one per line)...&#10;https://www.skills.google/public_profiles/11111111-2222-3333-4444-555555555555"></textarea>
         </div>
 
         <!-- Tab 3: Google Sheet Link -->
         <div id="paneSheet" class="tab-pane" role="tabpanel" aria-labelledby="tabSheet">
-          <label for="sheetInput" style="display:none">Google Sheet Published CSV URL</label>
+          <label for="sheetInput" class="sr-only">Google Sheet Published CSV URL</label>
           <input type="url" id="sheetInput" class="sheet-input" placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv">
           <div class="field-help">In Google Sheets: File → Share → Publish to web → Link → Select Sheet → Choose "Comma-separated values (.csv)" → Publish.</div>
         </div>
@@ -121,55 +121,86 @@
       <section id="stateMessageContainer" aria-live="assertive"></section>
 
       <!-- Results View -->
-      <section id="resultsSection" style="display:none">
-        <div id="summaryContainer" aria-live="polite"></div>
-        <div id="distContainer"></div>
-
-        <!-- Toolbar: Filters, Search, Sort, Exports -->
-        <div id="toolbarSection" class="toolbar-section">
-          <div class="filter-pills" role="radiogroup" aria-label="Status filter">
-            <button type="button" class="pill-btn active" data-filter="all" role="radio" aria-checked="true">All</button>
-            <button type="button" class="pill-btn" data-filter="complete" role="radio" aria-checked="false">Complete</button>
-            <button type="button" class="pill-btn" data-filter="in_progress" role="radio" aria-checked="false">In progress</button>
-            <button type="button" class="pill-btn" data-filter="no_badges" role="radio" aria-checked="false">No badges</button>
-            <button type="button" class="pill-btn" data-filter="unreachable" role="radio" aria-checked="false">Couldn't be checked</button>
+      <section id="resultsSection" class="hidden">
+        <!-- Dual View Switcher & Live Refresh Bar -->
+        <div class="view-header-bar">
+          <div class="view-switcher" role="tablist" aria-label="Dashboard Views">
+            <button type="button" id="btnViewArena" class="view-btn active" role="tab" aria-selected="true" aria-controls="arenaViewContainer">
+              🏆 BADGE ARENA
+            </button>
+            <button type="button" id="btnViewLedger" class="view-btn" role="tab" aria-selected="false" aria-controls="ledgerViewContainer">
+              📋 Editorial Ledger
+            </button>
           </div>
 
-          <div class="toolbar-controls">
-            <label for="searchInput" style="display:none">Search</label>
-            <input type="text" id="searchInput" class="search-input" placeholder="Search name, URL, UUID..." aria-label="Search participants">
-
-            <label for="sortSelect" style="display:none">Sort by</label>
-            <select id="sortSelect" class="sort-select" aria-label="Sort participants">
-              <option value="progress-desc">Progress (High to Low)</option>
-              <option value="progress-asc">Progress (Low to High)</option>
-              <option value="name-asc">Name (A–Z)</option>
-              <option value="date-desc">Recently Active</option>
-            </select>
-
-            <div class="export-btn-group">
-              <button type="button" id="btnExportCSV" class="btn-export">Export CSV</button>
-              <button type="button" id="btnExportJSON" class="btn-export">Export JSON</button>
-              <button type="button" id="btnExportReport" class="btn-export">Report (HTML)</button>
-              <button type="button" id="btnPrint" class="btn-export">Print / PDF</button>
+          <div class="refresh-controls-bar">
+            <span id="lastCheckedBadge" class="last-checked-badge fresh">Checked just now</span>
+            <button type="button" id="btnRefreshAll" class="btn-refresh" title="Re-evaluate all learner profiles in roster">
+              ↻ Refresh All
+            </button>
+            <div class="privacy-toggle-box">
+              <label class="privacy-toggle-label">
+                <input type="checkbox" id="arenaPrivacyToggle">
+                <span>Anonymize</span>
+              </label>
             </div>
           </div>
         </div>
 
-        <div id="tableContainer"></div>
-        <div id="unreachableContainer"></div>
-        <div id="reportStripContainer"></div>
+        <!-- 1. BADGE ARENA View (Esports Leaderboard) -->
+        <div id="arenaViewContainer" class="arena-view active"></div>
+
+        <!-- 2. Editorial Ledger View (Classic Audit Table) -->
+        <div id="ledgerViewContainer" class="ledger-view hidden">
+          <div id="summaryContainer" aria-live="polite"></div>
+          <div id="distContainer"></div>
+
+          <!-- Toolbar: Filters, Search, Sort, Exports -->
+          <div id="toolbarSection" class="toolbar-section">
+            <div class="filter-pills" role="radiogroup" aria-label="Status filter">
+              <button type="button" class="pill-btn active" data-filter="all" role="radio" aria-checked="true">All</button>
+              <button type="button" class="pill-btn" data-filter="complete" role="radio" aria-checked="false">Complete</button>
+              <button type="button" class="pill-btn" data-filter="in_progress" role="radio" aria-checked="false">In progress</button>
+              <button type="button" class="pill-btn" data-filter="no_badges" role="radio" aria-checked="false">No badges</button>
+              <button type="button" class="pill-btn" data-filter="unreachable" role="radio" aria-checked="false">Couldn't be checked</button>
+            </div>
+
+            <div class="toolbar-controls">
+              <label for="searchInput" class="sr-only">Search</label>
+              <input type="text" id="searchInput" class="search-input" placeholder="Search name, URL, UUID..." aria-label="Search participants">
+
+              <label for="sortSelect" class="sr-only">Sort by</label>
+              <select id="sortSelect" class="sort-select" aria-label="Sort participants">
+                <option value="progress-desc">Progress (High to Low)</option>
+                <option value="progress-asc">Progress (Low to High)</option>
+                <option value="name-asc">Name (A–Z)</option>
+                <option value="date-desc">Recently Active</option>
+              </select>
+
+              <div class="export-btn-group">
+                <button type="button" id="btnExportCSV" class="btn-export">Export CSV</button>
+                <button type="button" id="btnExportJSON" class="btn-export">Export JSON</button>
+                <button type="button" id="btnExportReport" class="btn-export">Report (HTML)</button>
+                <button type="button" id="btnPrint" class="btn-export">Print / PDF</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="tableContainer"></div>
+          <div id="unreachableContainer"></div>
+          <div id="reportStripContainer"></div>
+        </div>
       </section>
 
       <!-- Access Code Modal Dialog (for Hosted Mode) -->
-      <div id="accessCodeModal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="accessCodeTitle">
+      <div id="accessCodeModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="accessCodeTitle">
         <div class="modal-box">
           <h3 id="accessCodeTitle" class="modal-title">Access Code Required</h3>
           <p class="modal-text">This hosted badgeboard server requires an organizer access code to start runs.</p>
           <div class="modal-field">
             <label for="accessCodeInput" class="modal-label">Enter Access Code</label>
             <input type="password" id="accessCodeInput" class="access-code-input" autocomplete="off" placeholder="Access code...">
-            <div id="accessCodeError" class="modal-error" style="display:none"></div>
+            <div id="accessCodeError" class="modal-error hidden"></div>
           </div>
           <div class="modal-actions">
             <button type="button" id="btnSubmitAccessCode" class="btn-primary">Authenticate</button>

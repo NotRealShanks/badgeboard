@@ -9,7 +9,8 @@ import {
   renderUnreachableSection,
   renderReportStrip,
   renderProgressStrip,
-  renderStateMessage
+  renderStateMessage,
+  renderArenaView
 } from './render.js';
 
 class BadgeboardApp {
@@ -17,6 +18,7 @@ class BadgeboardApp {
     this.mode = 'DEMO'; // 'LIVE' or 'DEMO'
     this.state = 'empty'; // 'empty', 'validating', 'starting', 'streaming', 'complete', 'partial', 'cancelled', 'error', 'expired', 'zero', 'huge'
     this.theme = 'light';
+    this.activeView = 'arena'; // 'arena' (BADGE ARENA) or 'ledger' (Editorial Ledger)
     this.currentSnapshot = null;
     this.filteredResults = [];
     this.activeFilter = 'all';
@@ -25,6 +27,7 @@ class BadgeboardApp {
     this.activeTab = 'upload';
     this.streamingInterval = null;
     this.previousSnapshot = null;
+    this.prevRankMap = {};
     this.sessionComparisonDiff = null;
     this.accessCode = null;
     this.pendingRunAction = null;
@@ -72,6 +75,13 @@ class BadgeboardApp {
       devBanner: document.querySelector('.dev-banner'),
       inputSection: document.getElementById('inputSection'),
       resultsSection: document.getElementById('resultsSection'),
+      btnViewArena: document.getElementById('btnViewArena'),
+      btnViewLedger: document.getElementById('btnViewLedger'),
+      arenaViewContainer: document.getElementById('arenaViewContainer'),
+      ledgerViewContainer: document.getElementById('ledgerViewContainer'),
+      btnRefreshAll: document.getElementById('btnRefreshAll'),
+      lastCheckedBadge: document.getElementById('lastCheckedBadge'),
+      arenaPrivacyToggle: document.getElementById('arenaPrivacyToggle'),
       progressStripContainer: document.getElementById('progressStripContainer'),
       summaryContainer: document.getElementById('summaryContainer'),
       distContainer: document.getElementById('distContainer'),
@@ -215,10 +225,28 @@ class BadgeboardApp {
     if (this.elements.btnCancelAccessCode) {
       this.elements.btnCancelAccessCode.addEventListener('click', () => {
         if (this.elements.accessCodeModal) {
-          this.elements.accessCodeModal.style.display = 'none';
+          this.elements.accessCodeModal.classList.remove('is-open');
         }
         this.pendingRunAction = null;
         this.setState('empty');
+      });
+    }
+
+    // View Switcher (BADGE ARENA vs Editorial Ledger)
+    if (this.elements.btnViewArena) {
+      this.elements.btnViewArena.addEventListener('click', () => this.switchView('arena'));
+    }
+    if (this.elements.btnViewLedger) {
+      this.elements.btnViewLedger.addEventListener('click', () => this.switchView('ledger'));
+    }
+    if (this.elements.btnRefreshAll) {
+      this.elements.btnRefreshAll.addEventListener('click', () => this.refreshAllLearners());
+    }
+    if (this.elements.arenaPrivacyToggle) {
+      this.elements.arenaPrivacyToggle.addEventListener('change', (e) => {
+        this.settings.anonymize = e.target.checked;
+        if (this.elements.settingAnonymize) this.elements.settingAnonymize.checked = e.target.checked;
+        this.renderResultsView();
       });
     }
 
@@ -277,7 +305,7 @@ class BadgeboardApp {
     if (!file) return;
     this.selectedFile = file;
     if (this.elements.fileInfo) {
-      this.elements.fileInfo.style.display = 'inline-block';
+      this.elements.fileInfo.classList.remove('hidden');
       this.elements.fileInfo.textContent = `Selected: ${file.name} (${Math.round(file.size / 1024)} KB)`;
     }
   }
@@ -287,7 +315,7 @@ class BadgeboardApp {
     const code = this.elements.accessCodeInput.value.trim();
     if (!code) {
       if (this.elements.accessCodeError) {
-        this.elements.accessCodeError.style.display = 'block';
+        this.elements.accessCodeError.classList.remove('hidden');
         this.elements.accessCodeError.textContent = 'Please enter an access code.';
       }
       return;
@@ -295,15 +323,46 @@ class BadgeboardApp {
     // Access code is kept in memory only — never stored in localStorage or sessionStorage
     this.accessCode = code;
     if (this.elements.accessCodeModal) {
-      this.elements.accessCodeModal.style.display = 'none';
+      this.elements.accessCodeModal.classList.remove('is-open');
     }
     if (this.elements.accessCodeError) {
-      this.elements.accessCodeError.style.display = 'none';
+      this.elements.accessCodeError.classList.add('hidden');
     }
     if (this.pendingRunAction) {
       const action = this.pendingRunAction;
       this.pendingRunAction = null;
       action();
+    }
+  }
+
+  switchView(view) {
+    this.activeView = view;
+    if (view === 'arena') {
+      this.elements.btnViewArena?.classList.add('active');
+      this.elements.btnViewArena?.setAttribute('aria-selected', 'true');
+      this.elements.btnViewLedger?.classList.remove('active');
+      this.elements.btnViewLedger?.setAttribute('aria-selected', 'false');
+      this.elements.arenaViewContainer?.classList.remove('hidden');
+      this.elements.ledgerViewContainer?.classList.add('hidden');
+    } else {
+      this.elements.btnViewLedger?.classList.add('active');
+      this.elements.btnViewLedger?.setAttribute('aria-selected', 'true');
+      this.elements.btnViewArena?.classList.remove('active');
+      this.elements.btnViewArena?.setAttribute('aria-selected', 'false');
+      this.elements.ledgerViewContainer?.classList.remove('hidden');
+      this.elements.arenaViewContainer?.classList.add('hidden');
+    }
+  }
+
+  refreshAllLearners() {
+    if (this.elements.lastCheckedBadge) {
+      this.elements.lastCheckedBadge.textContent = 'Refreshing...';
+    }
+    if (this.mode === 'DEMO') {
+      this.startSimulatedStreaming();
+    } else if (this.currentRunId) {
+      fetch(`/api/runs/${this.currentRunId}/retry`, { method: 'POST' }).catch(() => {});
+      this.subscribeLiveEvents(this.currentRunId);
     }
   }
 
@@ -322,9 +381,68 @@ class BadgeboardApp {
     if (this.mode === 'LIVE') {
       this.startLiveRun();
     } else {
-      // In DEMO mode, start simulated streaming run
-      this.setState('streaming');
+      // In DEMO mode on GitHub Pages, dynamically build simulated cohort from uploaded or pasted input
+      if (this.activeTab === 'upload' && this.selectedFile) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const text = e.target.result;
+          const urls = parseRosterCSV(text);
+          if (urls.length > 0) {
+            this.startCustomDemoStream(urls);
+          } else {
+            this.setState('streaming');
+          }
+        };
+        reader.readAsText(this.selectedFile);
+      } else if (this.activeTab === 'paste') {
+        const text = this.elements.urlsTextarea ? this.elements.urlsTextarea.value.trim() : '';
+        const urls = text.split('\n').map(u => u.trim()).filter(u => u.length > 0);
+        if (urls.length > 0) {
+          this.startCustomDemoStream(urls);
+        } else {
+          this.setState('streaming');
+        }
+      } else {
+        this.setState('streaming');
+      }
     }
+  }
+
+  startCustomDemoStream(urls) {
+    this.setState('streaming');
+    // Map custom URLs to demo results structure
+    const customItems = urls.map((u, idx) => {
+      const match = u.match(/public_profiles\/([a-f0-9-]+)/i);
+      const uuid = match ? match[1] : `demo-uuid-${idx + 1}`;
+      const badgesCount = (idx % 4 === 0) ? 10 : (idx % 3 === 0) ? 8 : (idx % 2 === 0) ? 5 : 2;
+      const status = badgesCount >= 10 ? 'complete' : (badgesCount > 0 ? 'in_progress' : 'no_badges');
+      return {
+        student: { name: `Learner ${idx + 1}`, profile_url: u, uuid: uuid },
+        display_name: `Learner ${idx + 1}`,
+        pseudonym: `Learner-${idx + 1}`,
+        status: status,
+        counted_badges: badgesCount,
+        total_badges: badgesCount,
+        badges: Array.from({ length: badgesCount }, (_, bIdx) => ({
+          title: `Google Skills Badge ${bIdx + 1}`,
+          earned_at: '2026-11-01'
+        }))
+      };
+    });
+
+    this.currentSnapshot = {
+      summary: {
+        goal: this.settings.goal || 10,
+        total_students: customItems.length,
+        complete_count: customItems.filter(r => r.status === 'complete').length,
+        in_progress_count: customItems.filter(r => r.status === 'in_progress').length,
+        no_badges_count: customItems.filter(r => r.status === 'no_badges').length,
+        unreachable_count: 0
+      },
+      results: customItems,
+      unreachable: []
+    };
+    this.applyFilterAndSort();
   }
 
   async startLiveRun() {
@@ -388,9 +506,9 @@ class BadgeboardApp {
         const errJson = await res.json().catch(() => ({}));
         this.pendingRunAction = () => this.startLiveRun();
         if (this.elements.accessCodeModal) {
-          this.elements.accessCodeModal.style.display = 'flex';
+          this.elements.accessCodeModal.classList.add('is-open');
           if (this.elements.accessCodeError) {
-            this.elements.accessCodeError.style.display = 'block';
+            this.elements.accessCodeError.classList.remove('hidden');
             this.elements.accessCodeError.textContent = errJson.error || 'Organizer access code required.';
           }
           if (this.elements.accessCodeInput) {
@@ -496,7 +614,7 @@ class BadgeboardApp {
           if (res.status === 401) {
             this.pendingRunAction = () => this.retryUnreachable();
             if (this.elements.accessCodeModal) {
-              this.elements.accessCodeModal.style.display = 'flex';
+              this.elements.accessCodeModal.classList.add('is-open');
             }
             return;
           }
@@ -531,58 +649,61 @@ class BadgeboardApp {
     this.elements.reportStripContainer.textContent = '';
     this.elements.stateMessageContainer.textContent = '';
 
+    const showResults = (show) => {
+      if (show) {
+        this.elements.inputSection?.classList.add('hidden');
+        this.elements.resultsSection?.classList.remove('hidden');
+      } else {
+        this.elements.inputSection?.classList.remove('hidden');
+        this.elements.resultsSection?.classList.add('hidden');
+      }
+    };
+
     switch (newState) {
       case 'empty':
-        this.elements.inputSection.style.display = 'block';
-        this.elements.toolbarSection.style.display = 'none';
-        this.elements.resultsSection.style.display = 'none';
+        showResults(false);
+        this.elements.toolbarSection?.classList.add('hidden');
         break;
 
       case 'validating':
-        this.elements.inputSection.style.display = 'none';
-        this.elements.toolbarSection.style.display = 'none';
-        this.elements.resultsSection.style.display = 'block';
+        showResults(true);
+        this.elements.toolbarSection?.classList.add('hidden');
         this.elements.stateMessageContainer.appendChild(
           renderStateMessage('Validating Roster', 'Verifying URL formats and parsing participant records...')
         );
         break;
 
       case 'starting':
-        this.elements.inputSection.style.display = 'none';
-        this.elements.toolbarSection.style.display = 'none';
-        this.elements.resultsSection.style.display = 'block';
+        showResults(true);
+        this.elements.toolbarSection?.classList.add('hidden');
         this.elements.stateMessageContainer.appendChild(
           renderStateMessage('Initiating Run', 'Connecting to upstream evaluator and establishing streaming session...')
         );
         break;
 
       case 'streaming':
-        this.elements.inputSection.style.display = 'none';
-        this.elements.toolbarSection.style.display = 'flex';
-        this.elements.resultsSection.style.display = 'block';
+        showResults(true);
+        this.elements.toolbarSection?.classList.remove('hidden');
         this.startSimulatedStreaming();
         break;
 
       case 'complete':
-        this.elements.inputSection.style.display = 'none';
-        this.elements.toolbarSection.style.display = 'flex';
-        this.elements.resultsSection.style.display = 'block';
+        showResults(true);
+        this.elements.toolbarSection?.classList.remove('hidden');
         this.currentSnapshot = JSON.parse(JSON.stringify(DEMO_DATA));
         this.applyFilterAndSort();
         break;
 
       case 'partial':
-        this.elements.inputSection.style.display = 'none';
-        this.elements.toolbarSection.style.display = 'flex';
-        this.elements.resultsSection.style.display = 'block';
+        showResults(true);
+        this.elements.toolbarSection?.classList.remove('hidden');
         this.currentSnapshot = JSON.parse(JSON.stringify(DEMO_DATA));
         this.applyFilterAndSort();
         break;
 
       case 'cancelled':
-        this.elements.inputSection.style.display = 'none';
-        this.elements.toolbarSection.style.display = 'flex';
-        this.elements.resultsSection.style.display = 'block';
+        showResults(true);
+        this.elements.toolbarSection?.classList.remove('hidden');
         this.currentSnapshot = {
           summary: { goal: 10, total_students: 8, complete_count: 2 },
           results: DEMO_DATA.results.slice(0, 6),
@@ -595,27 +716,24 @@ class BadgeboardApp {
         break;
 
       case 'error':
-        this.elements.inputSection.style.display = 'none';
-        this.elements.toolbarSection.style.display = 'none';
-        this.elements.resultsSection.style.display = 'block';
+        showResults(true);
+        this.elements.toolbarSection?.classList.add('hidden');
         this.elements.stateMessageContainer.appendChild(
           renderStateMessage('Evaluation Error', extra.error || 'Server communication failure or network timeout. Please check server status.', true)
         );
         break;
 
       case 'expired':
-        this.elements.inputSection.style.display = 'none';
-        this.elements.toolbarSection.style.display = 'none';
-        this.elements.resultsSection.style.display = 'block';
+        showResults(true);
+        this.elements.toolbarSection?.classList.add('hidden');
         this.elements.stateMessageContainer.appendChild(
           renderStateMessage('Run Expired', 'This in-memory run session has passed its retention TTL (30 minutes). Please start a new run.')
         );
         break;
 
       case 'zero':
-        this.elements.inputSection.style.display = 'none';
-        this.elements.toolbarSection.style.display = 'flex';
-        this.elements.resultsSection.style.display = 'block';
+        showResults(true);
+        this.elements.toolbarSection?.classList.remove('hidden');
         this.currentSnapshot = {
           summary: { goal: 10, total_students: 5, complete_count: 0, no_badges_count: 5 },
           results: DEMO_DATA.results.filter(r => r.status === 'no_badges').concat(
@@ -627,9 +745,8 @@ class BadgeboardApp {
         break;
 
       case 'huge':
-        this.elements.inputSection.style.display = 'none';
-        this.elements.toolbarSection.style.display = 'flex';
-        this.elements.resultsSection.style.display = 'block';
+        showResults(true);
+        this.elements.toolbarSection?.classList.remove('hidden');
         this.currentSnapshot = generateLargeDemoDataset(250);
         this.applyFilterAndSort();
         break;
@@ -763,46 +880,79 @@ class BadgeboardApp {
 
   renderResultsView() {
     const snapshot = this.currentSnapshot;
+    if (!snapshot) return;
+
     const summary = snapshot.summary || {};
     const goal = summary.goal || 10;
-    const completeCount = summary.complete_count || snapshot.results.filter(r => r.status === 'complete').length;
-    const totalCount = summary.total_students || (snapshot.results.length + (snapshot.unreachable ? snapshot.unreachable.length : 0));
+    const completeCount = summary.complete_count || (snapshot.results || []).filter(r => r.status === 'complete').length;
+    const totalCount = summary.total_students || ((snapshot.results || []).length + (snapshot.unreachable ? snapshot.unreachable.length : 0));
 
     const unreachableList = snapshot.unreachable || [];
-    const isBlocked = (snapshot.results.length === 0 && unreachableList.length > 0);
+    const isBlocked = ((snapshot.results || []).length === 0 && unreachableList.length > 0);
 
-    // 1. Summary Headline
-    this.elements.summaryContainer.textContent = '';
-    this.elements.summaryContainer.appendChild(
-      renderSummarySentence(completeCount, totalCount, goal, this.sessionComparisonDiff, isBlocked)
-    );
+    // Update Last Checked timestamp badge
+    if (this.elements.lastCheckedBadge) {
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      this.elements.lastCheckedBadge.textContent = `Checked at ${timeStr}`;
+      this.elements.lastCheckedBadge.className = 'last-checked-badge fresh';
+    }
 
-    // 2. Distribution Bar
-    const dist = computeDistribution(snapshot.results, goal);
-    this.elements.distContainer.textContent = '';
-    this.elements.distContainer.appendChild(renderDistributionBar(dist, snapshot.results.length));
-
-    // 3. Roster Table
-    this.elements.tableContainer.textContent = '';
-    this.elements.tableContainer.appendChild(
-      renderRosterTable(this.filteredResults, {
-        anonymized: this.settings.anonymize,
-        showBadges: this.settings.includeBadges,
-        goal: goal
-      })
-    );
-
-    // 4. Unreachable Section
-    this.elements.unreachableContainer.textContent = '';
-    if (this.activeFilter === 'all' || this.activeFilter === 'unreachable') {
-      this.elements.unreachableContainer.appendChild(
-        renderUnreachableSection(unreachableList, () => this.retryUnreachable())
+    // A. Render BADGE ARENA View
+    if (this.elements.arenaViewContainer) {
+      this.elements.arenaViewContainer.textContent = '';
+      this.elements.arenaViewContainer.appendChild(
+        renderArenaView(snapshot.results || [], {
+          goal: goal,
+          anonymize: this.settings.anonymize,
+          prevRankMap: this.prevRankMap
+        })
       );
     }
 
+    // B. Render Editorial Ledger View
+    // 1. Summary Headline
+    if (this.elements.summaryContainer) {
+      this.elements.summaryContainer.textContent = '';
+      this.elements.summaryContainer.appendChild(
+        renderSummarySentence(completeCount, totalCount, goal, this.sessionComparisonDiff, isBlocked)
+      );
+    }
+
+    // 2. Distribution Bar
+    if (this.elements.distContainer) {
+      const dist = computeDistribution(snapshot.results || [], goal);
+      this.elements.distContainer.textContent = '';
+      this.elements.distContainer.appendChild(renderDistributionBar(dist, (snapshot.results || []).length));
+    }
+
+    // 3. Roster Table
+    if (this.elements.tableContainer) {
+      this.elements.tableContainer.textContent = '';
+      this.elements.tableContainer.appendChild(
+        renderRosterTable(this.filteredResults, {
+          anonymized: this.settings.anonymize,
+          showBadges: this.settings.includeBadges,
+          goal: goal
+        })
+      );
+    }
+
+    // 4. Unreachable Section
+    if (this.elements.unreachableContainer) {
+      this.elements.unreachableContainer.textContent = '';
+      if (this.activeFilter === 'all' || this.activeFilter === 'unreachable') {
+        this.elements.unreachableContainer.appendChild(
+          renderUnreachableSection(unreachableList, () => this.retryUnreachable())
+        );
+      }
+    }
+
     // 5. Run Report Strip
-    this.elements.reportStripContainer.textContent = '';
-    this.elements.reportStripContainer.appendChild(renderReportStrip(summary));
+    if (this.elements.reportStripContainer) {
+      this.elements.reportStripContainer.textContent = '';
+      this.elements.reportStripContainer.appendChild(renderReportStrip(summary));
+    }
   }
 
   exportCSV() {

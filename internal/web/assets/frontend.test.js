@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { sanitizeCSVCell, escapeCSVCell, parseRosterCSV, parseCSVLine, generateCSVExport } from './csv.js';
 import { computeDistribution } from './report.js';
+import { getTier, getNextMilestone } from './render.js';
 
 test('sanitizeCSVCell: neutralizes formula injection', () => {
   assert.equal(sanitizeCSVCell('=1+1'), "'=1+1");
@@ -95,4 +96,29 @@ test('dropzone: accessible markup and sr-only file input', async () => {
   assert.match(html, /id="dropzone"[^>]*role="button"[^>]*tabindex="0"/);
   assert.match(html, /id="fileInput"[^>]*class="sr-only"/);
   assert.match(html, /id="accessCodeModal"/);
+});
+
+test('badgeArena: achievement tiers correctly categorized', () => {
+  assert.equal(getTier(10).name, 'Champion');
+  assert.equal(getTier(12).name, 'Champion');
+  assert.equal(getTier(9).name, 'Elite');
+  assert.equal(getTier(8).name, 'Elite');
+  assert.equal(getTier(6).name, 'Challenger');
+  assert.equal(getTier(4).name, 'Explorer');
+  assert.equal(getTier(2).name, 'Rookie');
+  assert.equal(getTier(0).name, 'Not Started');
+});
+
+test('badgeArena: milestones indicate remaining badge requirements', () => {
+  assert.equal(getNextMilestone(10), 'Champion 10/10 Reached!');
+  assert.equal(getNextMilestone(9), '1 to Champion');
+  assert.equal(getNextMilestone(7), '1 to Elite');
+  assert.equal(getNextMilestone(0), '1 to Rookie');
+});
+
+test('accessCodeModal: style rules hide backdrop by default to prevent CSP modal lock', async () => {
+  const fs = await import('node:fs');
+  const css = fs.readFileSync(new URL('./style.css', import.meta.url), 'utf8');
+  assert.match(css, /\.modal-backdrop\s*\{[^}]*display:\s*none;/);
+  assert.match(css, /\.modal-backdrop\.is-open\s*\{[^}]*display:\s*flex\s*!important;/);
 });

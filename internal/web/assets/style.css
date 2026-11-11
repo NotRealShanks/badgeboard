@@ -950,6 +950,11 @@ body {
   line-height: 1.5;
 }
 
+/* Utility class for strict CSP display control */
+.hidden {
+  display: none !important;
+}
+
 /* Modal Dialog for Access Code (Hosted Hardening) */
 .modal-backdrop {
   position: fixed;
@@ -958,12 +963,16 @@ body {
   width: 100vw;
   height: 100vh;
   background: rgba(20, 18, 15, 0.75);
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: center;
   z-index: 1000;
   padding: 16px;
   box-sizing: border-box;
+}
+
+.modal-backdrop.is-open {
+  display: flex !important;
 }
 .modal-box {
   background: var(--bg-card);
@@ -1251,6 +1260,458 @@ body {
     gap: 12px 18px;
     font-size: 10.5px;
   }
+}
+
+/* ==========================================================================
+   BADGE ARENA: Gamified Esports Leaderboard Styles
+   ========================================================================== */
+.view-header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.view-switcher {
+  display: inline-flex;
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  padding: 4px;
+  border-radius: 6px;
+  gap: 4px;
+}
+
+.view-btn {
+  background: transparent;
+  color: var(--ink-secondary);
+  border: none;
+  padding: 8px 16px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.view-btn:hover {
+  color: var(--ink-primary);
+}
+
+.view-btn.active {
+  background: var(--accent);
+  color: #101010;
+  box-shadow: 0 2px 8px rgba(227, 179, 65, 0.25);
+}
+
+.refresh-controls-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.last-checked-badge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+}
+
+.last-checked-badge.fresh {
+  color: #2E7D32;
+  border-color: #2E7D32;
+}
+
+.last-checked-badge.stale {
+  color: #E65100;
+  border-color: #E65100;
+}
+
+.btn-refresh {
+  background: var(--bg-card);
+  color: var(--ink-primary);
+  border: 1px solid var(--border-strong);
+  padding: 6px 14px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.btn-refresh:hover {
+  background: var(--bg-elevated);
+}
+
+.privacy-toggle-box {
+  display: inline-flex;
+  align-items: center;
+}
+
+.privacy-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-secondary);
+  cursor: pointer;
+}
+
+/* Arena Campaign Overview Cards */
+.arena-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.arena-stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  padding: 18px;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+  overflow: hidden;
+}
+
+.arena-stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--border-strong);
+}
+
+.arena-stat-card.stat-champions::before {
+  background: #E3B341;
+}
+
+.arena-stat-card.stat-total::before {
+  background: #1976D2;
+}
+
+.arena-stat-card.stat-badges::before {
+  background: #7B1FA2;
+}
+
+.arena-stat-card.stat-leader::before {
+  background: #00897B;
+}
+
+.arena-stat-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--ink-secondary);
+  letter-spacing: 0.05em;
+}
+
+.arena-stat-val {
+  font-family: var(--font-serif);
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--ink-primary);
+  line-height: 1.1;
+}
+
+.arena-stat-sub {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-secondary);
+}
+
+/* Celebration Banner */
+.arena-celebration-banner {
+  background: linear-gradient(90deg, rgba(227, 179, 65, 0.15), rgba(227, 179, 65, 0.25), rgba(227, 179, 65, 0.15));
+  border: 1px solid #E3B341;
+  padding: 14px 20px;
+  border-radius: 6px;
+  margin-bottom: 24px;
+  text-align: center;
+  box-shadow: 0 4px 16px rgba(227, 179, 65, 0.15);
+}
+
+.celebration-title {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: #E3B341;
+  letter-spacing: 0.04em;
+}
+
+/* Champions Podium */
+.arena-podium-section {
+  margin-bottom: 32px;
+}
+
+.arena-section-title {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-secondary);
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.arena-podium {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  flex-wrap: wrap;
+}
+
+.podium-stand {
+  flex: 1;
+  min-width: 180px;
+  max-width: 260px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 20px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  transition: transform 0.2s ease;
+}
+
+.podium-stand:hover {
+  transform: translateY(-4px);
+}
+
+.podium-stand.podium-gold {
+  border-color: #E3B341;
+  box-shadow: 0 4px 20px rgba(227, 179, 65, 0.18);
+  order: 2;
+  min-height: 220px;
+}
+
+.podium-stand.podium-silver {
+  border-color: #B0BEC5;
+  order: 1;
+  min-height: 190px;
+}
+
+.podium-stand.podium-bronze {
+  border-color: #CD7F32;
+  order: 3;
+  min-height: 175px;
+}
+
+.podium-icon {
+  font-size: 32px;
+  margin-bottom: 4px;
+}
+
+.podium-place {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+.podium-gold .podium-place { color: #E3B341; }
+.podium-silver .podium-place { color: #B0BEC5; }
+.podium-bronze .podium-place { color: #CD7F32; }
+
+.podium-name {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ink-primary);
+  margin-bottom: 6px;
+  word-break: break-word;
+}
+
+.podium-badges {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-secondary);
+  margin-bottom: 10px;
+}
+
+/* Achievement Tier Badges */
+.tier-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 12px;
+  border: 1px solid currentColor;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.tier-champion { color: #E3B341; background: rgba(227, 179, 65, 0.1); }
+.tier-elite { color: #00ACC1; background: rgba(0, 172, 193, 0.1); }
+.tier-challenger { color: #FF7043; background: rgba(255, 112, 67, 0.1); }
+.tier-explorer { color: #AB47BC; background: rgba(171, 71, 188, 0.1); }
+.tier-rookie { color: #66BB6A; background: rgba(102, 187, 106, 0.1); }
+.tier-not-started { color: #9E9E9E; background: rgba(158, 158, 158, 0.1); }
+
+/* Arena Leaderboard Table */
+.arena-leaderboard-section {
+  margin-bottom: 32px;
+}
+
+.arena-table {
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.arena-header-row {
+  display: grid;
+  grid-template-columns: 80px 1.8fr 1.2fr 2fr 1.4fr 70px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border-strong);
+  padding: 12px 16px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-secondary);
+}
+
+.arena-row {
+  display: grid;
+  grid-template-columns: 80px 1.8fr 1.2fr 2fr 1.4fr 70px;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background 0.15s ease;
+}
+
+.arena-row:last-child {
+  border-bottom: none;
+}
+
+.arena-row:hover {
+  background: var(--bg-elevated);
+}
+
+.arena-row.rank-1 {
+  background: rgba(227, 179, 65, 0.04);
+}
+
+.arena-rank-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  width: 34px;
+  height: 28px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+}
+
+.arena-rank-badge.rank-1 {
+  background: #E3B341;
+  color: #101010;
+  border-color: #E3B341;
+}
+
+.arena-rank-badge.rank-2 {
+  background: #B0BEC5;
+  color: #101010;
+  border-color: #B0BEC5;
+}
+
+.arena-rank-badge.rank-3 {
+  background: #CD7F32;
+  color: #101010;
+  border-color: #CD7F32;
+}
+
+.arena-learner-name {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-primary);
+  word-break: break-word;
+}
+
+.arena-cell.cell-prog {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.arena-count-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-secondary);
+}
+
+.arena-milestone-tag {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-secondary);
+}
+
+.arena-cell.cell-trend {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: right;
+}
+
+.cell-trend.move-up { color: #2E7D32; }
+.cell-trend.move-down { color: #C62828; }
+.cell-trend.move-neutral { color: var(--ink-secondary); }
+
+/* Responsive adjustments for Arena view */
+@media (max-width: 768px) {
+  .arena-header-row {
+    display: none;
+  }
+  .arena-row {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 14px;
+  }
+  .arena-cell.cell-rank {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+  }
+  .arena-cell.cell-trend {
+    text-align: left;
+  }
+  .podium-stand.podium-gold { order: 1; }
+  .podium-stand.podium-silver { order: 2; }
+  .podium-stand.podium-bronze { order: 3; }
 }
 
 /* ==========================================================================
