@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, web-app ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, web-app ]
 
 jobs:
   lint:
@@ -45,6 +45,14 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run Frontend Unit Tests
+        run: node --test internal/web/assets/frontend.test.js
+
       - name: Go Vet
         run: go vet ./...
 
@@ -53,3 +61,13 @@ jobs:
 
       - name: Verify Coverage
         run: go tool cover -func=coverage.txt
+
+  docker:
+    name: Docker Build
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -t badgeboard:test .
+
