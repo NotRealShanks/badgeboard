@@ -532,21 +532,28 @@ export function renderArenaView(results, options = {}) {
   const anonymize = options.anonymize || false;
   const prevRankMap = options.prevRankMap || {};
 
+  // Universal property accessors for demo data (snake_case) and Go backend models
+  const getCount = (r) => r.counted_badges !== undefined ? r.counted_badges : (r.CountedBadges !== undefined ? r.CountedBadges : 0);
+  const getName = (r) => r.display_name || r.DisplayName || (r.student && r.student.name) || (r.Student && r.Student.Name) || 'Learner';
+  const getPseudo = (r) => r.pseudonym || r.Pseudonym || getName(r);
+  const getStatus = (r) => r.status || r.Status || '';
+  const getKey = (r) => (r.student && (r.student.uuid || r.student.profile_url)) || (r.Student && (r.Student.UUID || r.Student.ProfileURL)) || getName(r);
+
   // Sort candidates by badges desc, then name asc
-  const valid = results.filter(r => r.Status !== 'unreachable' && r.Status !== 'private_or_not_found');
+  const valid = results.filter(r => getStatus(r) !== 'unreachable' && getStatus(r) !== 'private_or_not_found');
   const sorted = [...valid].sort((a, b) => {
-    const diff = (b.CountedBadges || 0) - (a.CountedBadges || 0);
+    const diff = getCount(b) - getCount(a);
     if (diff !== 0) return diff;
-    return (a.DisplayName || '').localeCompare(b.DisplayName || '');
+    return getName(a).localeCompare(getName(b));
   });
 
   // Assign standard competition ranks (1, 1, 3 for ties)
   let currentRank = 1;
   const ranked = sorted.map((item, idx) => {
-    if (idx > 0 && (item.CountedBadges || 0) < (sorted[idx - 1].CountedBadges || 0)) {
+    if (idx > 0 && getCount(item) < getCount(sorted[idx - 1])) {
       currentRank = idx + 1;
     }
-    const prev = prevRankMap[item.Student?.UUID || item.Student?.ProfileURL];
+    const prev = prevRankMap[getKey(item)];
     let movement = '=';
     let moveClass = 'move-neutral';
     if (prev !== undefined && prev !== null) {
@@ -562,8 +569,8 @@ export function renderArenaView(results, options = {}) {
   });
 
   // 1. Campaign Overview Stats Cards
-  const champions = ranked.filter(r => (r.CountedBadges || 0) >= goal).length;
-  const totalBadges = ranked.reduce((acc, r) => acc + (r.CountedBadges || 0), 0);
+  const champions = ranked.filter(r => getCount(r) >= goal).length;
+  const totalBadges = ranked.reduce((acc, r) => acc + getCount(r), 0);
   const completionRate = ranked.length > 0 ? Math.round((champions / ranked.length) * 100) : 0;
 
   const statsRow = document.createElement('div');
@@ -573,7 +580,7 @@ export function renderArenaView(results, options = {}) {
     { label: 'Active Learners', val: String(ranked.length), sub: 'Total In Roster', cls: 'stat-total' },
     { label: 'Champions (10/10)', val: String(champions), sub: `${completionRate}% Goal Met`, cls: 'stat-champions' },
     { label: 'Badges Earned', val: String(totalBadges), sub: `Avg ${(ranked.length ? (totalBadges / ranked.length).toFixed(1) : 0)} / learner`, cls: 'stat-badges' },
-    { label: 'Arena Leader', val: ranked.length > 0 ? (anonymize ? (ranked[0].Pseudonym || 'Learner-1') : ranked[0].DisplayName) : '—', sub: ranked.length > 0 ? `${ranked[0].CountedBadges || 0} Badges` : 'Awaiting Data', cls: 'stat-leader' }
+    { label: 'Arena Leader', val: ranked.length > 0 ? (anonymize ? getPseudo(ranked[0]) : getName(ranked[0])) : '—', sub: ranked.length > 0 ? `${getCount(ranked[0])} Badges` : 'Awaiting Data', cls: 'stat-leader' }
   ];
 
   for (const c of cards) {
@@ -638,14 +645,14 @@ export function renderArenaView(results, options = {}) {
 
       const name = document.createElement('div');
       name.className = 'podium-name';
-      const displayName = anonymize ? (spot.item.Pseudonym || spot.item.DisplayName) : spot.item.DisplayName;
+      const displayName = anonymize ? getPseudo(spot.item) : getName(spot.item);
       name.textContent = displayName;
 
       const badgeCount = document.createElement('div');
       badgeCount.className = 'podium-badges';
-      badgeCount.textContent = `${spot.item.CountedBadges || 0} / 10 Badges`;
+      badgeCount.textContent = `${getCount(spot.item)} / ${goal} Badges`;
 
-      const tier = getTier(spot.item.CountedBadges || 0);
+      const tier = getTier(getCount(spot.item));
       const tierBadge = document.createElement('span');
       tierBadge.className = `tier-pill ${tier.cls}`;
       tierBadge.textContent = `${tier.icon} ${tier.name}`;
@@ -704,13 +711,13 @@ export function renderArenaView(results, options = {}) {
     colName.className = 'arena-cell cell-name';
     const nameEl = document.createElement('span');
     nameEl.className = 'arena-learner-name';
-    nameEl.textContent = anonymize ? (item.Pseudonym || item.DisplayName) : item.DisplayName;
+    nameEl.textContent = anonymize ? getPseudo(item) : getName(item);
     colName.appendChild(nameEl);
 
     // 3. Tier Col
     const colTier = document.createElement('div');
     colTier.className = 'arena-cell cell-tier';
-    const tier = getTier(item.CountedBadges || 0);
+    const tier = getTier(getCount(item));
     const tierPill = document.createElement('span');
     tierPill.className = `tier-pill ${tier.cls}`;
     tierPill.textContent = `${tier.icon} ${tier.name}`;
@@ -719,10 +726,11 @@ export function renderArenaView(results, options = {}) {
     // 4. Progress Col
     const colProg = document.createElement('div');
     colProg.className = 'arena-cell cell-prog';
-    const segBar = render10SegmentBar(item.CountedBadges || 0, goal, (item.CountedBadges || 0) >= goal);
+    const count = getCount(item);
+    const segBar = render10SegmentBar(count, goal, count >= goal);
     const countLabel = document.createElement('span');
     countLabel.className = 'arena-count-label';
-    countLabel.textContent = `${item.CountedBadges || 0}/${goal}`;
+    countLabel.textContent = `${count}/${goal}`;
     colProg.appendChild(segBar);
     colProg.appendChild(countLabel);
 
@@ -731,7 +739,7 @@ export function renderArenaView(results, options = {}) {
     colMilestone.className = 'arena-cell cell-milestone';
     const milestoneSpan = document.createElement('span');
     milestoneSpan.className = 'arena-milestone-tag';
-    milestoneSpan.textContent = getNextMilestone(item.CountedBadges || 0);
+    milestoneSpan.textContent = getNextMilestone(count);
     colMilestone.appendChild(milestoneSpan);
 
     // 6. Trend / Movement

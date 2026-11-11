@@ -70,6 +70,8 @@ class BadgeboardApp {
 
   initDOM() {
     this.elements = {
+      headerTitle: document.getElementById('headerTitle'),
+      btnNewRun: document.getElementById('btnNewRun'),
       themeBtn: document.getElementById('themeToggleBtn'),
       modeTag: document.getElementById('modeTag'),
       devBanner: document.querySelector('.dev-banner'),
@@ -247,6 +249,24 @@ class BadgeboardApp {
         this.settings.anonymize = e.target.checked;
         if (this.elements.settingAnonymize) this.elements.settingAnonymize.checked = e.target.checked;
         this.renderResultsView();
+      });
+    }
+
+    // Return to input / New Run navigation
+    if (this.elements.btnNewRun) {
+      this.elements.btnNewRun.addEventListener('click', () => {
+        this.setState('empty');
+      });
+    }
+    if (this.elements.headerTitle) {
+      this.elements.headerTitle.addEventListener('click', () => {
+        this.setState('empty');
+      });
+      this.elements.headerTitle.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          this.setState('empty');
+        }
       });
     }
 

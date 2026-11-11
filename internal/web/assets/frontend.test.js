@@ -116,6 +116,17 @@ test('badgeArena: milestones indicate remaining badge requirements', () => {
   assert.equal(getNextMilestone(0), '1 to Rookie');
 });
 
+test('navigation: btnNewRun and headerTitle are present for easy return to input form', async () => {
+  const fs = await import('node:fs');
+  const html = fs.readFileSync(new URL('./index.html', import.meta.url), 'utf8');
+  assert.match(html, /id="btnNewRun"/);
+  assert.match(html, /id="headerTitle"/);
+
+  const css = fs.readFileSync(new URL('./style.css', import.meta.url), 'utf8');
+  assert.match(css, /\.btn-new-run/);
+  assert.match(css, /\.brand-title/);
+});
+
 test('accessCodeModal: style rules hide backdrop by default to prevent CSP modal lock', async () => {
   const fs = await import('node:fs');
   const css = fs.readFileSync(new URL('./style.css', import.meta.url), 'utf8');

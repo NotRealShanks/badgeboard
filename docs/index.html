@@ -32,7 +32,7 @@
     <header class="app-header">
       <div class="header-row">
         <div class="brand">
-          <h1>Google Skills Badgeboard</h1>
+          <h1 id="headerTitle" class="brand-title" role="button" tabindex="0" title="Return to roster input">Google Skills Badgeboard</h1>
           <div class="subtitle">GDG Learn With Communities • Campaign Progress Ledger</div>
         </div>
         <div class="header-controls">
@@ -124,13 +124,18 @@
       <section id="resultsSection" class="hidden">
         <!-- Dual View Switcher & Live Refresh Bar -->
         <div class="view-header-bar">
-          <div class="view-switcher" role="tablist" aria-label="Dashboard Views">
-            <button type="button" id="btnViewArena" class="view-btn active" role="tab" aria-selected="true" aria-controls="arenaViewContainer">
-              🏆 BADGE ARENA
+          <div class="view-switcher-group">
+            <button type="button" id="btnNewRun" class="btn-new-run" title="Return to roster input to start a new check">
+              ← Evaluate Roster
             </button>
-            <button type="button" id="btnViewLedger" class="view-btn" role="tab" aria-selected="false" aria-controls="ledgerViewContainer">
-              📋 Editorial Ledger
-            </button>
+            <div class="view-switcher" role="tablist" aria-label="Dashboard Views">
+              <button type="button" id="btnViewArena" class="view-btn active" role="tab" aria-selected="true" aria-controls="arenaViewContainer">
+                🏆 BADGE ARENA
+              </button>
+              <button type="button" id="btnViewLedger" class="view-btn" role="tab" aria-selected="false" aria-controls="ledgerViewContainer">
+                📋 Editorial Ledger
+              </button>
+            </div>
           </div>
 
           <div class="refresh-controls-bar">

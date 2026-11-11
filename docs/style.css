@@ -1262,6 +1262,16 @@ body {
   }
 }
 
+.brand-title {
+  cursor: pointer;
+  user-select: none;
+  transition: opacity 0.15s ease;
+}
+
+.brand-title:hover {
+  opacity: 0.85;
+}
+
 /* ==========================================================================
    BADGE ARENA: Gamified Esports Leaderboard Styles
    ========================================================================== */
@@ -1274,6 +1284,34 @@ body {
   margin-bottom: 24px;
   padding-bottom: 16px;
   border-bottom: 1px solid var(--border-subtle);
+}
+
+.view-switcher-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.btn-new-run {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  padding: 8px 14px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-new-run:hover {
+  background: var(--accent);
+  color: #101010;
 }
 
 .view-switcher {
