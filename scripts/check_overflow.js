@@ -94,6 +94,9 @@ const server = http.createServer((req, res) => {
 });
 
 async function runChecks() {
+  console.log(`[check_overflow] Node: ${process.version}, Platform: ${process.platform}`);
+  console.log(`[check_overflow] env.CHROME_BIN: ${process.env.CHROME_BIN || '<unset>'}`);
+  console.log(`[check_overflow] env.CHROME_PATH: ${process.env.CHROME_PATH || '<unset>'}`);
   const chromePath = findChromePath();
   console.log(`[check_overflow] Using browser: ${chromePath}`);
 
@@ -117,11 +120,21 @@ async function runChecks() {
   ]);
 
   let chromeOutput = '';
+  let chromeExited = false;
+  let exitCode = null;
   chrome.stdout.on('data', d => { chromeOutput += d.toString(); });
   chrome.stderr.on('data', d => { chromeOutput += d.toString(); });
+  chrome.on('exit', (code) => {
+    chromeExited = true;
+    exitCode = code;
+  });
 
   let ready = false;
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 40; i++) {
+    if (chromeExited) {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+      throw new Error(`Chrome process exited prematurely with code ${exitCode}.\nOutput:\n${chromeOutput}`);
+    }
     try {
       const res = await fetch(`http://127.0.0.1:${DEBUG_PORT}/json/version`);
       if (res.ok) {
@@ -134,7 +147,7 @@ async function runChecks() {
   if (!ready) {
     try { chrome.kill(); } catch {}
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
-    throw new Error(`Chrome DevTools failed to become ready on port ${DEBUG_PORT} within 6s.\nOutput:\n${chromeOutput}`);
+    throw new Error(`Chrome DevTools failed to become ready on port ${DEBUG_PORT} within 8s.\nOutput:\n${chromeOutput}`);
   }
 
   const states = ['empty', 'streaming', 'complete', 'partial', 'error', 'huge'];

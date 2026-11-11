@@ -60,15 +60,18 @@ jobs:
 
       - name: Set up Chrome
         id: setup-chrome
-        uses: browser-actions/setup-chrome@v1
+        uses: browser-actions/setup-chrome@v2
         with:
-          chrome-version: stable
+          chrome-version: latest
+          install-dependencies: true
 
       - name: Run Headless Overflow and Dev Banner Checks
         env:
           CHROME_BIN: ${{ steps.setup-chrome.outputs.chrome-path }}
           CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
-        run: node scripts/check_overflow.js
+        run: |
+          echo "Using Chrome at: ${{ steps.setup-chrome.outputs.chrome-path }}"
+          node scripts/check_overflow.js
 
       - name: Go Vet
         run: go vet ./...
