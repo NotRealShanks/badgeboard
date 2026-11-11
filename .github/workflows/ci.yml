@@ -48,7 +48,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Verify No Drift (make pages)
         run: |
@@ -71,7 +71,7 @@ jobs:
           CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
         run: |
           echo "Using Chrome at: ${{ steps.setup-chrome.outputs.chrome-path }}"
-          node scripts/check_overflow.js
+          node --experimental-websocket scripts/check_overflow.js 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Go Vet
         run: go vet ./...

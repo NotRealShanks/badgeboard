@@ -16,11 +16,13 @@ const os = require('node:os');
 const { spawn } = require('node:child_process');
 
 function findChromePath() {
-  if (process.env.CHROME_BIN && fs.existsSync(process.env.CHROME_BIN)) {
-    return process.env.CHROME_BIN;
+  const bin = (process.env.CHROME_BIN || '').trim();
+  if (bin && fs.existsSync(bin)) {
+    return bin;
   }
-  if (process.env.CHROME_PATH && fs.existsSync(process.env.CHROME_PATH)) {
-    return process.env.CHROME_PATH;
+  const pth = (process.env.CHROME_PATH || '').trim();
+  if (pth && fs.existsSync(pth)) {
+    return pth;
   }
   try {
     const { execSync } = require('node:child_process');
@@ -97,6 +99,11 @@ async function runChecks() {
   console.log(`[check_overflow] Node: ${process.version}, Platform: ${process.platform}`);
   console.log(`[check_overflow] env.CHROME_BIN: ${process.env.CHROME_BIN || '<unset>'}`);
   console.log(`[check_overflow] env.CHROME_PATH: ${process.env.CHROME_PATH || '<unset>'}`);
+
+  if (typeof WebSocket === 'undefined') {
+    throw new Error(`WebSocket is not available in Node ${process.version}. Please run with Node 22+ or node --experimental-websocket.`);
+  }
+
   const chromePath = findChromePath();
   console.log(`[check_overflow] Using browser: ${chromePath}`);
 
